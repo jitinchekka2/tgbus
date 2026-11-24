@@ -23,7 +23,7 @@ jobs:
       - name: Build the site from the fixture feed
         run: go run ./cmd/tgbus build -feed testdata/feed -out "$RUNNER_TEMP/site" && test -f "$RUNNER_TEMP/site/index.html"
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
