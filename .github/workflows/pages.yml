@@ -4,7 +4,8 @@ name: Deploy site
 #
 # The feed is not stored in this repository. To enable deployment:
 #   1. Confirm you may redistribute derived data (see NOTICE).
-#   2. Set the repository variable FEED_URL to a direct link to the GTFS .zip.
+#   2. Set the repository variable FEED_URL to a DIRECT download link to the GTFS .zip
+#      (a link that returns the zip itself, not a web page that previews it).
 #   3. Settings -> Pages -> Source: "GitHub Actions".
 # Without FEED_URL the job is skipped.
 
@@ -40,7 +41,16 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/feed"
           curl -fsSL "$FEED_URL" -o "$RUNNER_TEMP/feed.zip"
+          # Hosts like Google Drive answer with an HTML page instead of the file
+          # when the link is not a direct download; fail with a clear message.
+          if ! unzip -tq "$RUNNER_TEMP/feed.zip" >/dev/null 2>&1; then
+            echo "::error::FEED_URL did not return a zip file. It must be a direct download link."
+            exit 1
+          fi
           unzip -q -j "$RUNNER_TEMP/feed.zip" '*.txt' -d "$RUNNER_TEMP/feed"
+          for f in routes trips stops stop_times shapes; do
+            test -f "$RUNNER_TEMP/feed/$f.txt" || { echo "::error::feed is missing $f.txt"; exit 1; }
+          done
       - name: Build the site
         run: go run ./cmd/tgbus build -feed "$RUNNER_TEMP/feed" -out dist
       - uses: actions/upload-pages-artifact@v3
