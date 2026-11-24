@@ -1,0 +1,12 @@
+Data attribution
+================
+
+This project reads the GTFS feed "Telangana opendata GTFS TGSRTC" published by
+Open Data Telangana (https://data.telangana.gov.in/) for the Telangana State
+Road Transport Corporation (TGSRTC).
+
+The feed is NOT included in this repository. Its licence terms have not yet
+been confirmed by the maintainer; the exact attribution statement required by
+the publisher will be added here before any derived data is distributed.
+
+Base map data: OpenStreetMap contributors (https://www.openstreetmap.org/copyright).

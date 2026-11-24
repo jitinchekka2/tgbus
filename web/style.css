@@ -1,0 +1,135 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --line: #d0d7de;
+  --accent: #1f6feb;
+  --accent-2: #e8590c;
+  --hover: #f3f4f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161b22;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --line: #30363d;
+    --accent: #4493f8;
+    --accent-2: #ff8a3d;
+    --hover: #21262d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#map { position: absolute; inset: 0; }
+
+#panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: 330px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .18);
+}
+
+h1 { margin: 0; font-size: 18px; }
+.sub { margin: 2px 0 12px; color: var(--muted); font-size: 12px; }
+
+#search {
+  width: 100%;
+  padding: 9px 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+#results { list-style: none; margin: 6px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
+#results:empty { display: none; }
+#results button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+#results button:hover, #results button:focus-visible { background: var(--hover); outline: none; }
+#results .short { font-weight: 600; margin-right: 6px; }
+#results .long { color: var(--muted); font-size: 12px; }
+
+#route-card { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+#route-card[hidden] { display: none; }
+.card-head { display: flex; justify-content: space-between; gap: 8px; }
+#route-short { font-size: 20px; font-weight: 700; }
+#route-long { color: var(--muted); font-size: 12px; }
+#route-clear {
+  align-self: flex-start;
+  width: 28px; height: 28px;
+  font-size: 20px; line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+#route-clear:hover { background: var(--hover); }
+
+#route-stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 10px 0; }
+#route-stats dt { color: var(--muted); }
+#route-stats dd { margin: 0; text-align: right; }
+
+details { margin-top: 6px; }
+summary { cursor: pointer; font-weight: 600; }
+.swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; }
+ol.stops { margin: 6px 0 0; padding-left: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+ol.stops button {
+  display: flex; gap: 8px; width: 100%;
+  padding: 3px 6px;
+  font: inherit; text-align: left; color: inherit;
+  background: none; border: 0; border-radius: 4px; cursor: pointer;
+}
+ol.stops button:hover, ol.stops button:focus-visible { background: var(--hover); outline: none; }
+ol.stops .n { min-width: 24px; color: var(--muted); text-align: right; }
+ol.stops .t { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+#layers { margin: 14px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+#layers legend { padding: 0 4px; color: var(--muted); font-size: 12px; }
+#layers label { display: block; padding: 3px 0; cursor: pointer; }
+
+.maplibregl-popup-content { color: #1f2328; font: 13px/1.4 system-ui, sans-serif; }
+.popup-title { font-weight: 700; margin-bottom: 4px; }
+.popup-meta { color: #656d76; margin-bottom: 4px; }
+.popup-routes { max-height: 160px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.popup-routes button {
+  display: flex; gap: 6px; width: 100%;
+  padding: 2px 4px;
+  font: inherit; text-align: left; color: inherit;
+  background: none; border: 0; border-radius: 4px; cursor: pointer;
+}
+.popup-routes button:hover { background: #f3f4f6; }
+.popup-routes .c { margin-left: auto; color: #656d76; }
+
+@media (max-width: 640px) {
+  #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 45vh; }
+}

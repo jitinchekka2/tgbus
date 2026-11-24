@@ -1,0 +1,6 @@
+stop_id,stop_name,zone_id,stop_lat,stop_lon,stop_desc
+A,"Koti, Women's College",z,17.385,78.486,d
+B,Abids,z,17.390,78.475,d
+C,Uppal,z,17.400,78.560,d
+D,Dilsukhnagar,z,17.368,78.526,d
+BAD,Broken,z,notanumber,78.0,d

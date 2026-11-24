@@ -1,0 +1,14 @@
+# Raw GTFS feeds are large (>150 MB) and are not redistributed in this repo.
+# Download one yourself and point -feed at it (see README).
+Telangana_opendata_gtfs_*/
+*.zip
+
+# Build output
+/dist/
+/tgbus
+*.wasm
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

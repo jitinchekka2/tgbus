@@ -1,0 +1,4 @@
+route_id,route_short_name,route_long_name,agency_id,route_type
+R1,10A,"10A - Koti, to Uppal",TGSRTC,3
+R2,20,Twenty - Alpha to Beta,TGSRTC,3
+R3,30,No trips route,TGSRTC,3

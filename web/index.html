@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TGSRTC Bus Network</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <aside id="panel">
+    <h1>TGSRTC bus network</h1>
+    <p class="sub">Telangana State Road Transport Corporation</p>
+
+    <input id="search" type="search" placeholder="Search route number or place…"
+           autocomplete="off" aria-label="Search routes">
+    <ul id="results" aria-label="Search results"></ul>
+
+    <section id="route-card" hidden>
+      <div class="card-head">
+        <div>
+          <div id="route-short"></div>
+          <div id="route-long"></div>
+        </div>
+        <button id="route-clear" type="button" aria-label="Clear route">&times;</button>
+      </div>
+      <dl id="route-stats"></dl>
+      <div id="route-lines"></div>
+    </section>
+
+    <fieldset id="layers">
+      <legend>Layers</legend>
+      <label><input type="checkbox" id="toggle-network" checked> All routes</label>
+      <label><input type="checkbox" id="toggle-stops" checked> Stops</label>
+      <label><input type="checkbox" id="toggle-heat"> Service intensity (trips per stop)</label>
+    </fieldset>
+
+    <p id="status" class="sub" role="status">Loading…</p>
+  </aside>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
