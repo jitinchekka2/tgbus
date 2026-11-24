@@ -6,5 +6,5 @@ import "embed"
 
 // FS holds the site's static assets. embed.go itself is skipped when copying.
 //
-//go:embed index.html style.css js vendor
+//go:embed index.html style.css logo.svg js vendor
 var FS embed.FS

@@ -5,7 +5,8 @@
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 An open-source explorer for **Telangana State Road Transport Corporation (TGSRTC)** bus
-data. It turns the official GTFS feed into a fast, static website: browse every route
+data. *This is an independent project, not affiliated with or endorsed by TGSRTC or the
+Government of Telangana.* It turns the official GTFS feed into a fast, static website: browse every route
 and stop on a map, search by route number or place, and see when buses leave a stop.
 
 **Live demo: https://jitinchekka2.github.io/tgbus/**
@@ -29,8 +30,8 @@ and stop on a map, search by route number or place, and see when buses leave a s
 - **Stop pages**: next departures per route (soonest first, in India time), all departures
   for the day, adjustable start time.
 - **Search**: route number or stop name, keyboard-accessible.
-- **Directions**: pick a start and destination (stop name, your location, or a point on the
-  map), a departure time, and get the best journeys by number of buses, with walking and
+- **Directions**: pick a start and destination (stop name, address, your location, or a point
+  on the map), a departure time, and get the best journeys by number of buses, with walking and
   waiting shown step by step and drawn on the map. Works after midnight and across the night gap.
 - **Shareable links**: `#/route/<id>`, `#/stop/<id>` and `#/plan/<from>/<to>/<time>`.
 - **Static output**: no server to run; works from any path (for example GitHub Pages). The
@@ -105,6 +106,13 @@ The journey planner is [RAPTOR](https://www.microsoft.com/en-us/research/publica
 written in Go and compiled to WebAssembly, running in a Web Worker. Its answers are checked
 against an independent algorithm (Connection Scan) on thousands of random networks and on the
 real feed. See [docs/architecture.md](docs/architecture.md).
+
+### Address search and privacy
+Typing in a Directions field searches stop names locally. To look up a street, landmark or
+area, press Enter or "Search address": that sends the text you typed (plus your IP address and
+Referer, as any request does) to [Nominatim](https://nominatim.org/) on openstreetmap.org, at
+most once a second and never while typing. Nothing else leaves your browser except map tiles.
+To remove address search entirely, set `geocoder: null` in `web/js/config.js`.
 
 ### What the planner does and does not know
 - It uses the **published timetable only**: no live positions, delays or traffic.

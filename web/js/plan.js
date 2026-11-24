@@ -61,14 +61,44 @@ export function legChips(journey) {
       : { kind: "ride", text: shortLabel(l.route.id, l.route.short) });
 }
 
-function placeField({ id, label, stops, hint, onChoose, onPick, onLocate }) {
+function placeField({ id, label, stops, hint, onChoose, onPick, onLocate, geocode, onAddress }) {
   const input = el("input", {
     id, type: "search", autocomplete: "off", placeholder: hint, role: "combobox",
     "aria-expanded": "false", "aria-autocomplete": "list",
   });
   const list = el("ul", { id: `${id}-list`, role: "listbox", hidden: true, "aria-label": `${label} suggestions` });
+  const geo = el("div", { class: "geo", "aria-live": "polite" });
+  let geoSeq = 0;
+  const showGeo = (...nodes) => geo.replaceChildren(...nodes);
+  async function submitAddress() {
+    if (!geocode) return;
+    const q = input.value.trim();
+    const seq = ++geoSeq;
+    if (q.length < 2) { showGeo(el("p", { class: "muted small", text: "Type a place or address first." })); return; }
+    showGeo(el("p", { class: "muted small", role: "status", text: "Searching…" }));
+    try {
+      const results = await geocode(q);
+      if (seq !== geoSeq) return; // a newer search or typing superseded this one
+      if (!results.length) {
+        showGeo(el("p", { class: "muted small", text: "No places found in the bus network area. Try a landmark or an area name." }));
+        return;
+      }
+      const ul = el("ul", { class: "plain geo-results", "aria-label": `${label} address results` });
+      for (const r of results) {
+        ul.append(el("li", {}, el("button", { type: "button", class: "row", onclick: () => { showGeo(); onAddress(r); } },
+          el("span", { class: "grow", text: r.label }),
+          r.kind ? el("span", { class: "muted small", text: r.kind }) : null)));
+      }
+      showGeo(ul, el("p", { class: "muted small", text: "Address search by OpenStreetMap Nominatim." }));
+    } catch (err) {
+      if (seq === geoSeq) showGeo(el("p", { class: "error-text small", role: "alert", text: err.message }));
+    }
+  }
+  input.addEventListener("input", () => { geoSeq++; showGeo(); }); // typing again discards old address results
+
   createCombobox({
-    input, list, emptyText: "No matching stops",
+    input, list, onSubmit: geocode ? submitAddress : undefined,
+    emptyText: geocode ? "No matching stops. Press Enter to search addresses." : "No matching stops",
     search: (q) => [{
       heading: "Stops",
       items: searchStops(stops(), q, 8).map((s) => ({ label: s.name, sub: `${s.trips}/day`, badge: "●", badgeClass: "pin", value: s })),
@@ -76,12 +106,13 @@ function placeField({ id, label, stops, hint, onChoose, onPick, onLocate }) {
     onChoose,
   });
   const buttons = el("div", { class: "field-actions" },
+    geocode ? el("button", { type: "button", class: "btn small-btn", onclick: submitAddress, text: "Search address" }) : null,
     onLocate ? el("button", { type: "button", class: "btn small-btn", onclick: onLocate, text: "My location" }) : null,
     el("button", { type: "button", class: "btn small-btn", onclick: onPick, text: "Pick on map" }));
   const node = el("div", { class: "place" },
     el("label", { for: id, text: label }),
     el("div", { class: "search-box" }, input, list),
-    buttons);
+    buttons, geo);
   return { node, input, buttons };
 }
 
@@ -89,17 +120,20 @@ function placeField({ id, label, stops, hint, onChoose, onPick, onLocate }) {
  * Build the directions view.
  * @param {object} o
  * @param {() => Array<{id: string, name: string, trips: number}>} o.stops
- * @param {object} o.on  callbacks: from(stop), to(stop), pickFrom(), pickTo(), locateFrom(), swap(),
- *                       minutes(min|null), now(), select(index), openStop(id), openRoute(id), close()
+ * @param {((query: string) => Promise<Array<{label: string, lat: number, lon: number, kind: string}>>) | null} [o.geocode]
+ *        address search; leave out to hide the feature
+ * @param {object} o.on  callbacks: from(stop), to(stop), fromAddress(r), toAddress(r), pickFrom(), pickTo(),
+ *                       locateFrom(), swap(), minutes(min|null), now(), select(index), openStop(id),
+ *                       openRoute(id), close()
  */
-export function createPlanView({ stops, on }) {
+export function createPlanView({ stops, on, geocode = null }) {
   const from = placeField({
-    id: "plan-from", label: "From", hint: "Stop name, or pick on the map", stops,
-    onChoose: (s) => on.from(s), onPick: () => on.pickFrom(), onLocate: () => on.locateFrom(),
+    id: "plan-from", label: "From", hint: "Stop or address, or pick on the map", stops, geocode,
+    onChoose: (s) => on.from(s), onAddress: (r) => on.fromAddress(r), onPick: () => on.pickFrom(), onLocate: () => on.locateFrom(),
   });
   const to = placeField({
-    id: "plan-to", label: "To", hint: "Stop name, or pick on the map", stops,
-    onChoose: (s) => on.to(s), onPick: () => on.pickTo(),
+    id: "plan-to", label: "To", hint: "Stop or address, or pick on the map", stops, geocode,
+    onChoose: (s) => on.to(s), onAddress: (r) => on.toAddress(r), onPick: () => on.pickTo(),
   });
   const time = el("input", { id: "plan-time", type: "time", value: "08:00" });
   time.addEventListener("input", () => on.minutes(parseClock(time.value)));

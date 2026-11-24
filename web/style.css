@@ -65,6 +65,11 @@ h2.big.small { font-size: 17px; }
   box-shadow: var(--shadow);
 }
 #panel header p { margin: 2px 0 12px; font-size: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand img { flex: none; }
+.brand h1 { line-height: 1.2; }
+.brand p { margin-bottom: 0 !important; }
+#panel header.brand { margin-bottom: 12px; }
 footer { margin-top: 12px; }
 footer p { margin: 4px 0; overflow-wrap: anywhere; }
 
@@ -191,6 +196,11 @@ summary { cursor: pointer; font-weight: 600; }
 .linklike:hover { text-decoration: underline; }
 .badge.linklike { color: var(--badge-fg); background: var(--badge-bg); }
 .badge.linklike:hover { text-decoration: none; filter: brightness(1.1); }
+
+.geo { margin-top: 4px; }
+.geo p { margin: 4px 0; }
+.geo-results { margin: 4px 0; border: 1px solid var(--line); border-radius: 6px; max-height: 220px; overflow-y: auto; }
+.error-text.small { font-size: 12px; }
 
 @media (max-width: 640px) {
   #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 48vh; }

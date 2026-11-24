@@ -12,6 +12,9 @@ export const CONFIG = {
   center: [78.4867, 17.385], // Hyderabad
   zoom: 10,
   timeZone: "Asia/Kolkata", // the feed's schedule is in local Indian time
+  // Address search (OpenStreetMap Nominatim). Set to null to remove the feature
+  // and any request to a third party. See web/js/geocoder.js for the usage rules.
+  geocoder: { url: "https://nominatim.openstreetmap.org/search" },
   dataBase: "data/", // relative, so the site works from any sub-path
   attribution:
     'Data: <a href="https://data.telangana.gov.in/" target="_blank" rel="noopener">Open Data Telangana</a> / TGSRTC',

@@ -94,6 +94,7 @@ func TestBuildCommand(t *testing.T) {
 		path string
 	}{
 		{name: "page", path: "index.html"},
+		{name: "logo and favicon", path: "logo.svg"},
 		{name: "module", path: "js/app.js"},
 		{name: "vendored map library", path: "vendor/maplibre-gl/maplibre-gl.js"},
 		{name: "meta", path: "data/meta.json"},

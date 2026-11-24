@@ -2,6 +2,7 @@ import { CONFIG } from "./config.js";
 import { createCombobox } from "./combobox.js";
 import { getMeta, getOverview, getRoute, getSearch, getStop, getStops } from "./data.js";
 import { el } from "./dom.js";
+import { boundsOfPoints, createGeocoder } from "./geocoder.js";
 import {
   EMPTY, applyVisibility, boundsOf, createMap, currentScheme, installOverlay, setBasemap, setSource,
 } from "./map.js";
@@ -22,6 +23,8 @@ let map;
 let searchRows = [];
 let stopList = []; // { id, name, trips, lat, lon }
 let navSeq = 0;
+let stopBounds = null; // [west, south, east, north] of the bus network, to keep address results relevant
+const geocoder = CONFIG.geocoder ? createGeocoder({ url: CONFIG.geocoder.url }) : null;
 
 const setView = (node) => $("view").replaceChildren(node);
 const setStatus = (text) => { $("status").textContent = text; };
@@ -123,11 +126,13 @@ function goPlan(from, to, minutes = plan.minutes) {
   location.hash = planHash(from, to, minutes);
 }
 
-function setPlaceFromStop(role, s) {
-  const place = { lat: s.lat, lon: s.lon };
-  labels.set(placeKey(place), s.name);
+function setPlace(role, place, label) {
+  labels.set(placeKey(place), label);
   goPlan(role === "from" ? place : plan.from, role === "to" ? place : plan.to);
 }
+
+const setPlaceFromStop = (role, s) => setPlace(role, { lat: s.lat, lon: s.lon }, s.name);
+const setPlaceFromAddress = (role, r) => setPlace(role, { lat: r.lat, lon: r.lon }, r.label);
 
 function setPick(role) {
   plan.pick = role;
@@ -157,9 +162,12 @@ function ensurePlanView() {
   if (planView) return;
   planView = createPlanView({
     stops: () => stopList,
+    geocode: geocoder ? (q) => geocoder.search(q, stopBounds ?? boundsOfPoints(stopList)) : null,
     on: {
       from: (s) => setPlaceFromStop("from", s),
       to: (s) => setPlaceFromStop("to", s),
+      fromAddress: (r) => setPlaceFromAddress("from", r),
+      toAddress: (r) => setPlaceFromAddress("to", r),
       pickFrom: () => setPick("from"),
       pickTo: () => setPick("to"),
       locateFrom,
@@ -327,6 +335,7 @@ async function loadData() {
       id: f.properties.id, name: f.properties.name, trips: f.properties.trips,
       lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
     }));
+    stopBounds = boundsOfPoints(stopList);
     for (const id of ["overview", "stops", "heat"]) setSource(map, id, id === "overview" ? overview : stops);
     setStatus(`${meta.routes.toLocaleString()} routes · ${meta.stops.toLocaleString()} stops · ${meta.trips.toLocaleString()} trips per day`);
     $("feed-info").textContent = `Feed: ${meta.feed} · built ${meta.builtAt.slice(0, 10)}`;

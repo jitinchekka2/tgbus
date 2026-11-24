@@ -295,3 +295,105 @@ test("legChips leaves out trivial walks", () => {
   ] };
   assert.deepEqual(legChips(j), [{ kind: "ride", text: "42" }]);
 });
+
+// --- geocoder (no network: fetch and the clock are injected) -----------------
+import { boundsOfPoints, createGeocoder, geocodeUrl, parseNominatim } from "../js/geocoder.js";
+
+const row = (name, lat, lon, type = "yes") => ({ display_name: name, lat: String(lat), lon: String(lon), type, category: "place" });
+
+table("geocodeUrl", [
+  { name: "encodes the query and limits to India, English", bbox: null, q: "Hi-Tech City, Hyderabad",
+    has: ["q=Hi-Tech+City%2C+Hyderabad", "format=jsonv2", "countrycodes=in", "accept-language=en", "limit=5"], lacks: ["viewbox"] },
+  { name: "bounds the search to a box (left,top,right,bottom)", bbox: [78, 16, 80, 18], q: "x",
+    has: ["viewbox=78%2C18%2C80%2C16", "bounded=1"], lacks: [] },
+], (c) => {
+  const u = geocodeUrl("https://nominatim.example/search", c.q, c.bbox);
+  assert.ok(u.startsWith("https://nominatim.example/search?"));
+  for (const h of c.has) assert.ok(u.includes(h), `${u} should include ${h}`);
+  for (const l of c.lacks) assert.ok(!u.includes(l), `${u} should not include ${l}`);
+});
+
+table("parseNominatim", [
+  { name: "shortens the display name to three parts", rows: [row("Charminar, Laad Bazaar, Khilwat, Ward 49, Hyderabad, Telangana, India", 17.36, 78.47, "monument")],
+    want: [{ label: "Charminar, Laad Bazaar, Khilwat", lat: 17.36, lon: 78.47, kind: "monument" }] },
+  { name: "underscores in the type become spaces", rows: [row("A, B", 1, 2, "bus_stop")], want: [{ label: "A, B", lat: 1, lon: 2, kind: "bus stop" }] },
+  { name: "drops duplicates", rows: [row("A, B", 17, 78), row("A, B", 17, 78)], want: [{ label: "A, B", lat: 17, lon: 78, kind: "yes" }] },
+  { name: "skips rows without usable coordinates", rows: [{ display_name: "Bad", lat: "x", lon: "y" }, row("Good", 17, 78)], want: [{ label: "Good", lat: 17, lon: 78, kind: "yes" }] },
+  { name: "skips rows without a name", rows: [{ lat: "17", lon: "78" }], want: [] },
+  { name: "not an array", rows: { error: "boom" }, want: [] },
+  { name: "empty", rows: [], want: [] },
+], (c) => assert.deepEqual(parseNominatim(c.rows), c.want));
+
+test("parseNominatim respects the limit", () => {
+  const rows = Array.from({ length: 9 }, (_, i) => row(`Place ${i}`, 17 + i / 100, 78));
+  assert.equal(parseNominatim(rows, 3).length, 3);
+});
+
+table("boundsOfPoints", [
+  { name: "no points", pts: [], pad: 0.1, want: null },
+  { name: "single point is padded", pts: [{ lat: 17, lon: 78 }], pad: 0.5, want: [77.5, 16.5, 78.5, 17.5] },
+  { name: "box around several", pts: [{ lat: 16, lon: 78 }, { lat: 18, lon: 80 }, { lat: 17, lon: 79 }], pad: 0, want: [78, 16, 80, 18] },
+], (c) => assert.deepEqual(boundsOfPoints(c.pts, c.pad), c.want));
+
+test("createGeocoder", async (t) => {
+  const mk = (responses) => {
+    const calls = [];
+    const clock = { t: 0, slept: [] };
+    const g = createGeocoder({
+      url: "https://n/search", minGapMs: 1000,
+      fetchFn: async (u) => { calls.push(u); const r = responses.shift(); return r instanceof Error ? Promise.reject(r) : r; },
+      sleep: async (ms) => { clock.slept.push(ms); clock.t += ms; },
+      now: () => clock.t,
+    });
+    return { g, calls, clock };
+  };
+  const ok = (rows) => ({ ok: true, status: 200, json: async () => rows });
+
+  await t.test("returns parsed results", async () => {
+    const { g, calls } = mk([ok([row("Charminar, Hyderabad", 17.36, 78.47, "monument")])]);
+    const r = await g.search("charminar", [78, 16, 80, 18]);
+    assert.equal(r[0].label, "Charminar, Hyderabad");
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].includes("bounded=1"));
+  });
+  await t.test("remembers answers: a repeated search makes no request", async () => {
+    const { g, calls } = mk([ok([row("A, B", 1, 2)])]);
+    await g.search("Same Place");
+    await g.search("same place ");
+    assert.equal(calls.length, 1);
+  });
+  await t.test("spaces requests out to respect the rate limit", async () => {
+    const { g, clock } = mk([ok([]), ok([])]);
+    await g.search("one place");
+    await g.search("another place");
+    assert.deepEqual(clock.slept, [1000]); // the second waits out the gap; the first does not
+  });
+  await t.test("two searches started together are serialised", async () => {
+    const { g, calls } = mk([ok([row("First", 1, 1)]), ok([row("Second", 2, 2)])]);
+    const [a, b] = await Promise.all([g.search("first one"), g.search("second one")]);
+    assert.equal(a[0].label, "First");
+    assert.equal(b[0].label, "Second");
+    assert.equal(calls.length, 2);
+  });
+  await t.test("too-short queries make no request", async () => {
+    const { g, calls } = mk([]);
+    assert.deepEqual(await g.search("a"), []);
+    assert.deepEqual(await g.search("  "), []);
+    assert.equal(calls.length, 0);
+  });
+  await t.test("a network failure becomes a readable error", async () => {
+    const { g } = mk([new TypeError("fetch failed")]);
+    await assert.rejects(g.search("somewhere"), /not reachable/);
+  });
+  await t.test("rate limiting by the server is reported", async () => {
+    const { g } = mk([{ ok: false, status: 429, json: async () => ({}) }]);
+    await assert.rejects(g.search("somewhere"), /busy/);
+  });
+  await t.test("a server error is reported, and a failure is not cached", async () => {
+    const { g, calls } = mk([{ ok: false, status: 500, json: async () => ({}) }, ok([row("Back, Up", 3, 4)])]);
+    await assert.rejects(g.search("somewhere"), /failed/);
+    const r = await g.search("somewhere");
+    assert.equal(r[0].label, "Back, Up");
+    assert.equal(calls.length, 2);
+  });
+});

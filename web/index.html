@@ -6,6 +6,7 @@
   <meta name="description" content="Explore Telangana State Road Transport Corporation bus routes, stops and timetables on a map.">
   <meta name="color-scheme" content="light dark">
   <title>TGSRTC bus network</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -13,9 +14,12 @@
   <div id="map" role="application" aria-label="Map of the TGSRTC bus network"></div>
 
   <aside id="panel" aria-label="Route and stop information">
-    <header>
-      <h1>TGSRTC bus network</h1>
-      <p class="muted">Telangana State Road Transport Corporation</p>
+    <header class="brand">
+      <img src="logo.svg" alt="" width="34" height="34">
+      <div>
+        <h1>TGSRTC bus network</h1>
+        <p class="muted">Unofficial explorer of TGSRTC open data</p>
+      </div>
     </header>
 
     <nav class="tabs" aria-label="Mode">
@@ -42,10 +46,13 @@
     <footer>
       <p id="status" class="muted" role="status">Loading…</p>
       <p class="muted small">
-        Schedules are from the published feed and may differ from what runs on the day.
+        This is an independent open-source project, not affiliated with or endorsed by TGSRTC or the
+        Government of Telangana. Schedules are from the published feed and may differ from what runs on the day.
         Data: <a href="https://data.telangana.gov.in/" target="_blank" rel="noopener">Open Data Telangana</a> / TGSRTC.
         Map: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors,
         <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.
+        Address search uses <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a>
+        and sends your search text to it only when you press Enter or "Search address".
       </p>
       <p id="feed-info" class="muted small"></p>
     </footer>

@@ -15,8 +15,19 @@ given in the site footer and here.
 
 The feed itself is NOT included in this repository.
 
+Independence and trademarks
+---------------------------
+This is an independent open-source project. It is not affiliated with, endorsed by or
+operated by TGSRTC or the Government of Telangana. The names "TGSRTC" and "Telangana State
+Road Transport Corporation" are used only to say what the data describes. The TGSRTC logo is
+NOT used; the bus mark in web/logo.svg is original to this project (MIT licensed).
+
 Third-party material
 --------------------
 - Base map data: (c) OpenStreetMap contributors (https://www.openstreetmap.org/copyright),
   served as vector tiles by OpenFreeMap (https://openfreemap.org/) using OpenMapTiles.
 - MapLibre GL JS (BSD-3-Clause, https://maplibre.org/), vendored under web/vendor/.
+- Address search: Nominatim (https://nominatim.org/) running on openstreetmap.org, data (c)
+  OpenStreetMap contributors (ODbL). The page contacts it only when a visitor presses Enter or
+  "Search address", and sends just the search text (plus the usual IP address and Referer).
+  Set `geocoder: null` in web/js/config.js to remove the feature and that request.

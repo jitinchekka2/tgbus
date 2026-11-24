@@ -11,8 +11,9 @@ let nextId = 0;
  * @param {(query: string) => Array<{heading?: string, items: Array<{label: string, sub?: string, badge?: string, value: any}>}>} cfg.search
  * @param {(value: any) => void} cfg.onChoose
  * @param {string} [cfg.emptyText]
+ * @param {(query: string) => void} [cfg.onSubmit]  called when Enter is pressed and nothing matches
  */
-export function createCombobox({ input, list, search, onChoose, emptyText = "No matches" }) {
+export function createCombobox({ input, list, search, onChoose, emptyText = "No matches", onSubmit }) {
   const prefix = `cb${++nextId}`;
   let options = [];
   let active = -1;
@@ -80,6 +81,7 @@ export function createCombobox({ input, list, search, onChoose, emptyText = "No 
     if (e.key === "ArrowDown" && n) { e.preventDefault(); setActive((active + 1) % n); }
     else if (e.key === "ArrowUp" && n) { e.preventDefault(); setActive((active - 1 + n) % n); }
     else if (e.key === "Enter" && n) { e.preventDefault(); choose(options[Math.max(active, 0)]); }
+    else if (e.key === "Enter" && onSubmit && input.value.trim()) { e.preventDefault(); close(); onSubmit(input.value); }
     else if (e.key === "Escape") { if (n) close(); else input.value = ""; }
   });
   input.addEventListener("blur", () => setTimeout(close, 100));
