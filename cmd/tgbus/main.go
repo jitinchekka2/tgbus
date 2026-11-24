@@ -23,7 +23,8 @@ const defaultFeed = "Telangana_opendata_gtfs_TGSRTC_25_September_2026"
 const usage = `tgbus: turn a GTFS bus feed into a static, explorable website
 
 Usage:
-  tgbus build [-feed dir] [-out dir]   generate the static site (default out: dist)
+  tgbus build [-feed dir] [-out dir] [-name label]
+                                       generate the static site (default out: dist)
   tgbus serve [-dir dir] [-addr h:p]   serve a built site locally for preview
   tgbus stats [-feed dir]              print feed statistics and skipped rows
 
@@ -98,8 +99,13 @@ func cmdBuild(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	feed := fs.String("feed", defaultFeed, "directory containing the GTFS .txt files")
 	out := fs.String("out", "dist", "output directory for the static site")
+	name := fs.String("name", "", "feed label shown on the site (default: the feed directory's name)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	label := *name
+	if label == "" {
+		label = filepath.Base(filepath.Clean(*feed))
 	}
 	idx, took, err := loadFeed(*feed)
 	if err != nil {
@@ -108,7 +114,7 @@ func cmdBuild(args []string, stdout, stderr io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "loaded %s in %s\n", *feed, took.Round(time.Millisecond))
 	printStats(stdout, idx)
 
-	rep, err := site.Build(idx, site.Options{Out: *out, Assets: web.FS, FeedName: filepath.Base(filepath.Clean(*feed))})
+	rep, err := site.Build(idx, site.Options{Out: *out, Assets: web.FS, FeedName: label})
 	if err != nil {
 		return fmt.Errorf("build site: %w", err)
 	}

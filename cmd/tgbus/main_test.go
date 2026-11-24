@@ -49,6 +49,34 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestBuildFeedLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "defaults to the feed directory name", args: nil, want: `"feed":"feed"`},
+		{name: "explicit name wins", args: []string{"-name", "TGSRTC 2026"}, want: `"feed":"TGSRTC 2026"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "site")
+			args := append([]string{"build", "-feed", "../../testdata/feed", "-out", out}, tt.args...)
+			var stdout, stderr bytes.Buffer
+			if err := run(args, &stdout, &stderr); err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			meta, err := os.ReadFile(filepath.Join(out, "data", "meta.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(meta), tt.want) {
+				t.Errorf("meta.json = %s, want containing %s", meta, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildCommand(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "site")
 	var stdout, stderr bytes.Buffer

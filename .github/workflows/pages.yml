@@ -37,7 +37,10 @@ jobs:
           FEED_URL: ${{ vars.FEED_URL }}
         run: |
           mkdir -p "$RUNNER_TEMP/feed"
-          curl -fsSL "$FEED_URL" -o "$RUNNER_TEMP/feed.zip"
+          curl -fsSL -D "$RUNNER_TEMP/headers.txt" "$FEED_URL" -o "$RUNNER_TEMP/feed.zip"
+          # Label the feed with the file name the host reports (letters, digits, . _ - only).
+          name=$(grep -i -o 'filename="[^"]*"' "$RUNNER_TEMP/headers.txt" | tail -1 | cut -d'"' -f2 | sed 's/\.zip$//' | tr -cd 'A-Za-z0-9._ -')
+          echo "FEED_NAME=${name:-TGSRTC GTFS feed}" >> "$GITHUB_ENV"
           # Hosts like Google Drive answer with an HTML page instead of the file
           # when the link is not a direct download; fail with a clear message.
           if ! unzip -tq "$RUNNER_TEMP/feed.zip" >/dev/null 2>&1; then
@@ -49,7 +52,7 @@ jobs:
             test -f "$RUNNER_TEMP/feed/$f.txt" || { echo "::error::feed is missing $f.txt"; exit 1; }
           done
       - name: Build the site
-        run: go run ./cmd/tgbus build -feed "$RUNNER_TEMP/feed" -out dist
+        run: go run ./cmd/tgbus build -feed "$RUNNER_TEMP/feed" -out dist -name "$FEED_NAME"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
