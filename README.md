@@ -1,8 +1,15 @@
 # tgbus
 
+[![CI](https://github.com/jitinchekka2/tgbus/actions/workflows/ci.yml/badge.svg)](https://github.com/jitinchekka2/tgbus/actions/workflows/ci.yml)
+[![Deploy site](https://github.com/jitinchekka2/tgbus/actions/workflows/pages.yml/badge.svg)](https://github.com/jitinchekka2/tgbus/actions/workflows/pages.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 An open-source explorer for **Telangana State Road Transport Corporation (TGSRTC)** bus
 data. It turns the official GTFS feed into a fast, static website: browse every route
 and stop on a map, search by route number or place, and see when buses leave a stop.
+
+**Live demo: https://jitinchekka2.github.io/tgbus/**
+(try [route 277D](https://jitinchekka2.github.io/tgbus/#/route/00OqzfuB))
 
 | Route | Stop timetable |
 |---|---|
@@ -46,8 +53,25 @@ Other commands:
 ```sh
 go run ./cmd/tgbus stats -feed path/to/feed   # counts and any rows that were skipped
 go test -race ./...                           # Go tests (use the small fixture feed)
-node --test web/test/*.test.mjs                          # front-end unit tests (Node 20+, no install)
+node --test web/test/*.test.mjs               # front-end unit tests (Node 20+, no install)
 ```
+
+`build` also takes `-name "label"` to set the feed name shown in the page footer
+(default: the feed folder's name).
+
+## Deploy your own
+The repository ships a GitHub Actions workflow ([`pages.yml`](.github/workflows/pages.yml))
+that downloads a feed, runs `tgbus build` and publishes the result to GitHub Pages
+(on demand, and weekly to pick up a refreshed feed).
+
+1. Check that you may redistribute the data (see [NOTICE](NOTICE)).
+2. Set the repository variable `FEED_URL` to a **direct** download link to the feed `.zip`:
+   a link that returns the zip itself, not a web page that previews it. Some hosts (for
+   example Google Drive) need a special download form; the workflow stops with a clear
+   error if the response is not a zip.
+3. In Settings, Pages, choose **GitHub Actions** as the source, then run the workflow.
+
+Without `FEED_URL` the workflow does nothing.
 
 ## How it works
 `tgbus build` streams the feed, joins routes, trips, stops and stop times, simplifies the
