@@ -78,7 +78,7 @@ export function routeCard(data, { onClose, onOpenStop, onFocusStop }) {
     stats, patterns);
 }
 
-export function stopCard(stop, { onClose, onOpenRoute }) {
+export function stopCard(stop, { onClose, onOpenRoute, onDirections }) {
   const head = el("div", { class: "card-head" },
     el("div", {},
       el("h2", { class: "big small", text: stop.name }),
@@ -124,5 +124,10 @@ export function stopCard(stop, { onClose, onOpenRoute }) {
   timeInput.addEventListener("input", renderRoutes);
   renderRoutes();
 
-  return el("section", { class: "card" }, head, control, body);
+  const directions = onDirections
+    ? el("div", { class: "field-actions" },
+      el("button", { type: "button", class: "btn small-btn", onclick: () => onDirections("from"), text: "Directions from here" }),
+      el("button", { type: "button", class: "btn small-btn", onclick: () => onDirections("to"), text: "Directions to here" }))
+    : null;
+  return el("section", { class: "card" }, head, directions, control, body);
 }

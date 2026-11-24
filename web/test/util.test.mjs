@@ -2,8 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  clock, formatMinutes, hashFor, isSafeId, nextDepartures, nowMinutes, parseClock, parseHash,
-  routeDesc, searchRoutes, searchStops, shortLabel, waitText,
+  clock, clockSec, formatDuration, formatMetres, formatMinutes, hashFor, isSafeId, nextDepartures, nowMinutes,
+  parseClock, parseCoord, parseHash, planHash, routeDesc, searchRoutes, searchStops, shortLabel, waitText,
 } from "../js/util.js";
 
 // Each test is a table of cases, mirroring the Go tests.
@@ -139,3 +139,159 @@ table("isSafeId", [
   { name: "slash", in: "a/b", want: false },
   { name: "not a string", in: 12, want: false },
 ], (c) => assert.equal(isSafeId(c.in), c.want));
+
+table("parseCoord", [
+  { name: "typical", in: "17.385,78.486", want: { lat: 17.385, lon: 78.486 } },
+  { name: "negative", in: "-33.9,-70.5", want: { lat: -33.9, lon: -70.5 } },
+  { name: "integers", in: "17,78", want: { lat: 17, lon: 78 } },
+  { name: "latitude out of range", in: "91,10", want: null },
+  { name: "longitude out of range", in: "10,181", want: null },
+  { name: "spaces rejected", in: "17.3, 78.4", want: null },
+  { name: "one number", in: "17.3", want: null },
+  { name: "letters", in: "a,b", want: null },
+  { name: "empty", in: "", want: null },
+  { name: "undefined", in: undefined, want: null },
+], (c) => assert.deepEqual(parseCoord(c.in), c.want));
+
+table("formatDuration", [
+  { name: "under a minute rounds to 0", in: 20, want: "0 min" },
+  { name: "rounds to the nearest minute", in: 89, want: "1 min" },
+  { name: "minutes", in: 45 * 60, want: "45 min" },
+  { name: "an hour exactly", in: 3600, want: "1 h" },
+  { name: "hours and minutes", in: 3600 + 5 * 60, want: "1 h 5 min" },
+  { name: "negative clamps to zero", in: -50, want: "0 min" },
+], (c) => assert.equal(formatDuration(c.in), c.want));
+
+table("formatMetres", [
+  { name: "rounds to ten metres", in: 347, want: "350 m" },
+  { name: "just under a km", in: 994, want: "990 m" },
+  { name: "kilometres", in: 1234, want: "1.2 km" },
+], (c) => assert.equal(formatMetres(c.in), c.want));
+
+table("clockSec marks the next day", [
+  { name: "morning", in: 8 * 3600 + 5 * 60, want: "08:05" },
+  { name: "last minute of the day", in: 86399, want: "23:59" },
+  { name: "past midnight", in: 86400 + 70 * 60, want: "01:10 +1" },
+  { name: "two days on", in: 2 * 86400 + 60, want: "00:01 +2" },
+], (c) => assert.equal(clockSec(c.in), c.want));
+
+table("planHash and parseHash for directions", [
+  { name: "no places", hash: "#/plan", want: { view: "plan", from: null, to: null, minutes: null } },
+  { name: "both places and a time", hash: "#/plan/17.385,78.486/17.19144,78.64767/0650",
+    want: { view: "plan", from: { lat: 17.385, lon: 78.486 }, to: { lat: 17.19144, lon: 78.64767 }, minutes: 410 } },
+  { name: "only the destination", hash: "#/plan/-/17.19,78.64",
+    want: { view: "plan", from: null, to: { lat: 17.19, lon: 78.64 }, minutes: null } },
+  { name: "bad coordinates become missing places", hash: "#/plan/99,500/17.19,78.64/0830",
+    want: { view: "plan", from: null, to: { lat: 17.19, lon: 78.64 }, minutes: 510 } },
+  { name: "bad time is ignored", hash: "#/plan/-/-/2560", want: { view: "plan", from: null, to: null, minutes: null } },
+  { name: "extra path segments rejected", hash: "#/plan/-/-/0830/x", want: { view: "home" } },
+], (c) => assert.deepEqual(parseHash(c.hash), c.want));
+
+table("planHash round trip", [
+  { name: "full", from: { lat: 17.385, lon: 78.486 }, to: { lat: 17.19144, lon: 78.64767 }, minutes: 410, want: "#/plan/17.385,78.486/17.19144,78.64767/0650" },
+  { name: "coordinates are rounded to 5 places", from: { lat: 17.3850001234, lon: 78.4860009 }, to: null, minutes: null, want: "#/plan/17.385,78.486/-" },
+  { name: "invalid time dropped", from: null, to: null, minutes: 1500, want: "#/plan/-/-" },
+  { name: "midnight is a valid time", from: null, to: null, minutes: 0, want: "#/plan/-/-/0000" },
+], (c) => {
+  const h = planHash(c.from, c.to, c.minutes);
+  assert.equal(h, c.want);
+  const back = parseHash(h);
+  assert.equal(back.view, "plan");
+  assert.deepEqual(back.to, c.to && { lat: Number(c.to.lat.toFixed(5)), lon: Number(c.to.lon.toFixed(5)) });
+});
+
+// --- journeyToGeoJSON (pure; no DOM needed) ---------------------------------
+import { isTrivialWalk, journeyToGeoJSON, legChips, RIDE_COLORS, walkMetres } from "../js/plan.js";
+
+const stopA = { id: "A", name: "Alpha", lat: 17.1, lon: 78.1 };
+const stopB = { id: "B", name: "Beta", lat: 17.2, lon: 78.2 };
+const stopC = { id: "C", name: "Gamma", lat: 17.3, lon: 78.3 };
+const route = (n) => ({ id: `id${n}`, short: String(n), long: `${n} - X to Y` });
+const origin = { lat: 17.09, lon: 78.09 };
+const dest = { lat: 17.31, lon: 78.31 };
+const journey = {
+  depart: 100, arrive: 900, rides: 2,
+  legs: [
+    { mode: "walk", from: null, to: stopA, dep: 100, arr: 160, walkM: 80 },
+    { mode: "ride", route: route(1), from: stopA, to: stopB, dep: 200, arr: 400, stops: [stopA, stopB] },
+    { mode: "ride", route: route(2), from: stopB, to: stopC, dep: 500, arr: 800, stops: [stopB, stopC] },
+    { mode: "walk", from: stopC, to: null, dep: 800, arr: 900, walkM: 120 },
+  ],
+};
+
+test("journeyToGeoJSON", async (t) => {
+  const fc = journeyToGeoJSON(journey, origin, dest);
+  const kinds = (k) => fc.features.filter((f) => f.properties.kind === k);
+
+  await t.test("draws dashed walks from the origin point and to the destination point", () => {
+    const walks = kinds("walk");
+    assert.equal(walks.length, 2);
+    assert.deepEqual(walks[0].geometry.coordinates, [[78.09, 17.09], [78.1, 17.1]]);
+    assert.deepEqual(walks[1].geometry.coordinates, [[78.3, 17.3], [78.31, 17.31]]);
+  });
+  await t.test("each ride is a coloured line through its stops, colours cycling", () => {
+    const rides = kinds("ride");
+    assert.equal(rides.length, 2);
+    assert.deepEqual(rides.map((r) => r.properties.color), [RIDE_COLORS[0], RIDE_COLORS[1]]);
+    assert.deepEqual(rides[0].geometry.coordinates, [[78.1, 17.1], [78.2, 17.2]]);
+    assert.equal(rides[1].properties.route, "2");
+  });
+  await t.test("marks boarding and alighting stops", () => {
+    assert.deepEqual(kinds("stop").map((s) => `${s.properties.role}:${s.properties.name}`),
+      ["board:Alpha", "alight:Beta", "board:Beta", "alight:Gamma"]);
+  });
+  await t.test("marks the origin and destination", () => {
+    assert.deepEqual(kinds("origin")[0].geometry.coordinates, [78.09, 17.09]);
+    assert.deepEqual(kinds("dest")[0].properties.label, "B");
+  });
+  await t.test("skips a zero-length walk (two stops at the same spot)", () => {
+    const j = { ...journey, legs: [
+      journey.legs[0], journey.legs[1],
+      { mode: "walk", from: stopB, to: { ...stopB, id: "B2" }, dep: 400, arr: 400, walkM: 0 },
+      journey.legs[2], journey.legs[3]] };
+    assert.equal(journeyToGeoJSON(j, origin, dest).features.filter((f) => f.properties.kind === "walk").length, 2);
+  });
+  await t.test("a walking-only journey has just a walk and the end points", () => {
+    const j = { depart: 0, arrive: 60, rides: 0, legs: [{ mode: "walk", from: null, to: null, dep: 0, arr: 60, walkM: 70 }] };
+    const f = journeyToGeoJSON(j, origin, dest).features;
+    assert.deepEqual(f.map((x) => x.properties.kind), ["walk", "origin", "dest"]);
+  });
+  await t.test("more rides than colours wraps around", () => {
+    const legs = Array.from({ length: RIDE_COLORS.length + 1 }, (_, i) =>
+      ({ mode: "ride", route: route(i), from: stopA, to: stopB, dep: i, arr: i + 1, stops: [stopA, stopB] }));
+    const rides = journeyToGeoJSON({ depart: 0, arrive: 9, rides: legs.length, legs }, origin, dest).features.filter((f) => f.properties.kind === "ride");
+    assert.equal(rides.at(-1).properties.color, RIDE_COLORS[0]);
+  });
+});
+
+test("legChips", () => {
+  assert.deepEqual(legChips(journey), [
+    { kind: "walk", text: "1 min" }, { kind: "ride", text: "1" }, { kind: "ride", text: "2" }, { kind: "walk", text: "2 min" },
+  ]);
+});
+
+table("isTrivialWalk", [
+  { name: "start point is on the stop", leg: { mode: "walk", dep: 100, arr: 100, walkM: 0 }, want: true },
+  { name: "a few seconds and metres", leg: { mode: "walk", dep: 100, arr: 120, walkM: 25 }, want: true },
+  { name: "long enough to mention", leg: { mode: "walk", dep: 100, arr: 160, walkM: 80 }, want: false },
+  { name: "short in time but not in distance", leg: { mode: "walk", dep: 100, arr: 110, walkM: 200 }, want: false },
+  { name: "rides are never trivial", leg: { mode: "ride", dep: 100, arr: 100, walkM: 0 }, want: false },
+  // The Go planner omits walkM when it is 0, so the field is often absent in real responses.
+  { name: "missing walkM means zero metres", leg: { mode: "walk", dep: 100, arr: 100 }, want: true },
+  { name: "missing walkM but a long wait is still not a short walk", leg: { mode: "walk", dep: 100, arr: 400 }, want: false },
+], (c) => assert.equal(isTrivialWalk(c.leg), c.want));
+
+table("walkMetres", [
+  { name: "present", leg: { walkM: 120 }, want: 120 },
+  { name: "zero", leg: { walkM: 0 }, want: 0 },
+  { name: "omitted by the planner", leg: {}, want: 0 },
+], (c) => assert.equal(walkMetres(c.leg), c.want));
+
+test("legChips leaves out trivial walks", () => {
+  const j = { legs: [
+    { mode: "walk", dep: 0, arr: 0, walkM: 0 },
+    { mode: "ride", route: { id: "x", short: "42" }, dep: 60, arr: 600 },
+    { mode: "walk", dep: 600, arr: 600, walkM: 0 },
+  ] };
+  assert.deepEqual(legChips(j), [{ kind: "ride", text: "42" }]);
+});

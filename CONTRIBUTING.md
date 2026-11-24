@@ -9,6 +9,13 @@ Thanks for helping make TGSRTC bus data easier to use.
 3. `go test ./...` and `node --test web/test/*.test.mjs` run against the small fixture feed in `testdata/feed`, so no
    download is needed for tests.
 
+## Building the full site locally
+`make site FEED=path/to/feed` builds the data and the WebAssembly planner into `dist/`;
+`make serve` previews it. To also run the planner's WebAssembly test:
+`TGBUS_DIST=dist node --test web/test/wasm.test.mjs`. To compare the planner with the
+independent Connection Scan check on the real feed:
+`TGBUS_FEED=$PWD/path/to/feed go test ./raptor -run RealFeed -v`.
+
 ## Making a change
 - Keep changes focused; open an issue first for anything large.
 - Write Go tests as **table-driven tests** (a slice of cases run with `t.Run`).

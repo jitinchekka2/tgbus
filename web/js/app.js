@@ -1,22 +1,26 @@
-import { el } from "./dom.js";
+import { CONFIG } from "./config.js";
+import { createCombobox } from "./combobox.js";
 import { getMeta, getOverview, getRoute, getSearch, getStop, getStops } from "./data.js";
+import { el } from "./dom.js";
 import {
   EMPTY, applyVisibility, boundsOf, createMap, currentScheme, installOverlay, setBasemap, setSource,
 } from "./map.js";
 import { errorCard, homeCard, loadingCard, routeCard, stopCard } from "./panel.js";
-import { hashFor, parseHash, routeDesc, searchRoutes, searchStops, shortLabel } from "./util.js";
+import { createPlanner } from "./planner.js";
+import { createPlanView, journeyToGeoJSON } from "./plan.js";
+import { hashFor, nowMinutes, parseHash, planHash, routeDesc, searchRoutes, searchStops, shortLabel } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
   scheme: currentScheme(),
-  overview: EMPTY, stops: EMPTY, route: EMPTY, selected: EMPTY,
+  overview: EMPTY, stops: EMPTY, route: EMPTY, selected: EMPTY, plan: EMPTY,
   visible: { network: true, stops: true, heat: false },
   dim: false,
 };
 let map;
 let searchRows = [];
-let stopList = [];
+let stopList = []; // { id, name, trips, lat, lon }
 let navSeq = 0;
 
 const setView = (node) => $("view").replaceChildren(node);
@@ -35,6 +39,7 @@ function clearSelection() {
   state.dim = false;
   setSource(map, "route", EMPTY);
   setSource(map, "selected", EMPTY);
+  clearPlanDrawing();
   applyVisibility(map, state);
 }
 
@@ -43,6 +48,7 @@ const fitPadding = () =>
     : { top: 50, right: 30, bottom: Math.round(window.innerHeight * 0.5), left: 30 };
 
 function showRoute(data) {
+  clearPlanDrawing();
   state.route = data;
   state.selected = EMPTY;
   state.dim = true;
@@ -60,6 +66,7 @@ function showRoute(data) {
 }
 
 function showStop(stop) {
+  clearPlanDrawing();
   state.route = EMPTY;
   state.dim = false;
   state.selected = pointFeature([stop.lon, stop.lat]);
@@ -70,18 +77,229 @@ function showStop(stop) {
   setView(stopCard(stop, {
     onClose: () => navigate("home"),
     onOpenRoute: (id) => navigate("route", id),
+    onDirections: (role) => {
+      const place = { lat: stop.lat, lon: stop.lon };
+      labels.set(placeKey(place), stop.name);
+      goPlan(role === "from" ? place : plan.from, role === "to" ? place : plan.to);
+    },
   }));
   document.title = `${stop.name} · TGSRTC bus network`;
+}
+
+/* ---------- directions ---------- */
+
+const plan = { from: null, to: null, minutes: null, journeys: [], selected: 0, pick: null, seq: 0 };
+const labels = new Map(); // "lat,lon" -> a name the user chose (stop name, "My location")
+let planView = null;
+// Re-plan when the planner becomes usable (or fails). "loading" is skipped:
+// runPlan already shows that state, and re-entering from it would loop.
+const planner = createPlanner((s) => {
+  if (s !== "loading" && parseHash(location.hash).view === "plan") runPlan();
+});
+
+const round5 = (v) => Math.round(v * 1e5) / 1e5;
+const placeKey = (p) => `${round5(p.lat)},${round5(p.lon)}`;
+
+function distMetres(a, b) {
+  const dy = (a.lat - b.lat) * 110540;
+  const dx = (a.lon - b.lon) * 111320 * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+
+/** A readable name for a place: one the user picked, a stop within 25 m, or its coordinates. */
+function labelFor(p) {
+  const known = labels.get(placeKey(p));
+  if (known) return known;
+  let best = null;
+  let bestD = 25;
+  for (const s of stopList) {
+    const d = distMetres(p, s);
+    if (d < bestD) { best = s; bestD = d; }
+  }
+  return best ? best.name : `Pin at ${round5(p.lat)}, ${round5(p.lon)}`;
+}
+
+function goPlan(from, to, minutes = plan.minutes) {
+  location.hash = planHash(from, to, minutes);
+}
+
+function setPlaceFromStop(role, s) {
+  const place = { lat: s.lat, lon: s.lon };
+  labels.set(placeKey(place), s.name);
+  goPlan(role === "from" ? place : plan.from, role === "to" ? place : plan.to);
+}
+
+function setPick(role) {
+  plan.pick = role;
+  map.getCanvas().style.cursor = role ? "crosshair" : "";
+  if (role) planView.message(`Click the map to set the ${role === "from" ? "start" : "destination"}. Press Esc to cancel.`);
+  else runPlan();
+}
+
+function locateFrom() {
+  if (!navigator.geolocation) {
+    planView.message("This browser cannot find your location. Search for a stop or pick a point on the map.", "error");
+    return;
+  }
+  planView.message("Finding your location…");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const place = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      labels.set(placeKey(place), "My location");
+      goPlan(place, plan.to);
+    },
+    (err) => planView.message(`Could not get your location (${err.message}). Search for a stop or pick a point on the map.`, "error"),
+    { timeout: 10000 },
+  );
+}
+
+function ensurePlanView() {
+  if (planView) return;
+  planView = createPlanView({
+    stops: () => stopList,
+    on: {
+      from: (s) => setPlaceFromStop("from", s),
+      to: (s) => setPlaceFromStop("to", s),
+      pickFrom: () => setPick("from"),
+      pickTo: () => setPick("to"),
+      locateFrom,
+      swap: () => goPlan(plan.to, plan.from),
+      minutes: (m) => {
+        if (m === null) return;
+        plan.minutes = m;
+        history.replaceState(null, "", planHash(plan.from, plan.to, m)); // a time tweak is not a new page
+        runPlan();
+      },
+      now: () => {
+        plan.minutes = nowMinutes(CONFIG.timeZone);
+        planView.setMinutes(plan.minutes);
+        history.replaceState(null, "", planHash(plan.from, plan.to, plan.minutes));
+        runPlan();
+      },
+      select: (i) => { plan.selected = i; renderPlan(true); },
+      openStop: (id) => navigate("stop", id),
+      openRoute: (id) => navigate("route", id),
+      close: () => navigate("home"),
+    },
+  });
+}
+
+function clearPlanDrawing() {
+  plan.pick = null;
+  if (map) map.getCanvas().style.cursor = "";
+  state.plan = EMPTY;
+  setSource(map, "plan", EMPTY);
+}
+
+function endpoints() {
+  const features = [];
+  if (plan.from) features.push({ type: "Feature", properties: { kind: "origin", label: "A" }, geometry: { type: "Point", coordinates: [plan.from.lon, plan.from.lat] } });
+  if (plan.to) features.push({ type: "Feature", properties: { kind: "dest", label: "B" }, geometry: { type: "Point", coordinates: [plan.to.lon, plan.to.lat] } });
+  return { type: "FeatureCollection", features };
+}
+
+function drawPlan(fc, fit) {
+  state.plan = fc;
+  setSource(map, "plan", fc);
+  if (!fit) return;
+  const bounds = boundsOf(fc.features);
+  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 15, duration: 700 });
+}
+
+function renderPlan(fit) {
+  planView.journeys(plan.journeys, plan.selected);
+  drawPlan(journeyToGeoJSON(plan.journeys[plan.selected], plan.from, plan.to), fit);
+}
+
+async function runPlan() {
+  if (!planView) return;
+  const seq = ++plan.seq;
+  plan.journeys = [];
+  plan.selected = 0;
+  drawPlan(endpoints(), false);
+
+  if (!plan.from || !plan.to) {
+    planView.message("Choose a start and a destination: search for a stop, use your location, or pick points on the map.");
+    if (plan.from || plan.to) drawPlan(endpoints(), true);
+    return;
+  }
+  if (planner.state === "unavailable" || planner.state === "error") {
+    planView.message(planner.message || "The journey planner could not start.", "error");
+    return;
+  }
+  if (planner.state !== "ready") {
+    planView.message("Loading the journey planner (about 2 MB, once)…");
+    planner.init();
+    return; // the planner's state callback calls runPlan again when it is ready
+  }
+  planView.message("Finding journeys…");
+  const resp = await planner.plan({
+    fromLat: plan.from.lat, fromLon: plan.from.lon, toLat: plan.to.lat, toLon: plan.to.lon,
+    depart: (plan.minutes ?? nowMinutes(CONFIG.timeZone)) * 60,
+  });
+  if (seq !== plan.seq) return; // a newer query superseded this one
+  if (resp.journeys.length) {
+    plan.journeys = resp.journeys;
+    renderPlan(true);
+    return;
+  }
+  const text = {
+    no_stops: "There is no bus stop within about 1 km of the start or the destination. Try picking points closer to a stop.",
+    no_journey: "No journey found at that time. Try a different time, or a start and destination nearer the network.",
+  }[resp.code] || resp.error || "Something went wrong planning that journey.";
+  planView.message(text, resp.code === "no_stops" || resp.code === "no_journey" ? "info" : "error");
+  drawPlan(endpoints(), true);
+}
+
+function showPlan(h) {
+  ensurePlanView();
+  state.route = EMPTY;
+  state.selected = EMPTY;
+  state.dim = true;
+  setSource(map, "route", EMPTY);
+  setSource(map, "selected", EMPTY);
+  applyVisibility(map, state);
+
+  plan.from = h.from;
+  plan.to = h.to;
+  plan.minutes = h.minutes ?? plan.minutes ?? nowMinutes(CONFIG.timeZone);
+  planView.setFrom(plan.from ? labelFor(plan.from) : "");
+  planView.setTo(plan.to ? labelFor(plan.to) : "");
+  planView.setMinutes(plan.minutes);
+  setView(planView.node);
+  planner.init();
+  document.title = "Directions · TGSRTC bus network";
+  updateTabs("plan"); // after the places above are stored, so the tab remembers them
+  runPlan();
+}
+
+function setCurrent(node, on) {
+  if (on) node.setAttribute("aria-current", "page");
+  else node.removeAttribute("aria-current");
+}
+
+function updateTabs(view) {
+  setCurrent($("tab-explore"), view !== "plan");
+  setCurrent($("tab-plan"), view === "plan");
+  // The Directions tab remembers the last start, destination and time.
+  $("tab-plan").setAttribute("href", plan.from || plan.to ? planHash(plan.from, plan.to, plan.minutes) : "#/plan");
 }
 
 // The URL hash is the single source of truth for what is shown.
 async function applyHash() {
   const seq = ++navSeq;
-  const { view, id } = parseHash(location.hash);
+  const h = parseHash(location.hash);
+  const { view, id } = h;
+  updateTabs(view);
+  if (view !== "plan") plan.pick = null;
   if (view === "home") {
     clearSelection();
     renderHome();
     document.title = "TGSRTC bus network";
+    return;
+  }
+  if (view === "plan") {
+    showPlan(h);
     return;
   }
   setView(loadingCard("Loading…"));
@@ -105,11 +323,16 @@ async function loadData() {
     state.overview = overview;
     state.stops = stops;
     searchRows = search.routes;
-    stopList = stops.features.map((f) => ({ id: f.properties.id, name: f.properties.name, trips: f.properties.trips }));
+    stopList = stops.features.map((f) => ({
+      id: f.properties.id, name: f.properties.name, trips: f.properties.trips,
+      lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1],
+    }));
     for (const id of ["overview", "stops", "heat"]) setSource(map, id, id === "overview" ? overview : stops);
     setStatus(`${meta.routes.toLocaleString()} routes · ${meta.stops.toLocaleString()} stops · ${meta.trips.toLocaleString()} trips per day`);
     $("feed-info").textContent = `Feed: ${meta.feed} · built ${meta.builtAt.slice(0, 10)}`;
-    if (parseHash(location.hash).view === "home") renderHome();
+    const view = parseHash(location.hash).view;
+    if (view === "home") renderHome();
+    else if (view === "plan") applyHash(); // labels for places in the URL can now name nearby stops
   } catch (err) {
     console.error(err);
     setStatus("Could not load the network data.");
@@ -117,111 +340,60 @@ async function loadData() {
   }
 }
 
-/* ---------- search combobox ---------- */
-
-const search = { input: null, list: null, options: [], active: -1 };
-
-function closeResults() {
-  search.list.replaceChildren();
-  search.list.hidden = true;
-  search.input.setAttribute("aria-expanded", "false");
-  search.input.removeAttribute("aria-activedescendant");
-  search.options = [];
-  search.active = -1;
-}
-
-function setActive(i) {
-  search.active = i;
-  search.options.forEach((o, n) => o.node.setAttribute("aria-selected", String(n === i)));
-  if (i >= 0) {
-    search.input.setAttribute("aria-activedescendant", search.options[i].node.id);
-    search.options[i].node.scrollIntoView({ block: "nearest" });
-  } else {
-    search.input.removeAttribute("aria-activedescendant");
-  }
-}
-
-function choose(opt) {
-  closeResults();
-  search.input.value = "";
-  navigate(opt.view, opt.id);
-}
-
-function renderResults(query) {
-  const q = query.trim();
-  if (!q) { closeResults(); return; }
-  const routes = searchRoutes(searchRows, q, 8);
-  const stops = searchStops(stopList, q, 6);
-  search.list.replaceChildren();
-  search.options = [];
-
-  const add = (view, item, label, sub) => {
-    const node = el("li", { role: "option", id: `opt-${search.options.length}`, "aria-selected": "false", class: "opt" },
-      el("span", { class: view === "route" ? "badge" : "pin", text: label }),
-      el("span", { class: "grow", text: sub }));
-    const opt = { view, id: item.id, node };
-    node.addEventListener("mousedown", (e) => e.preventDefault()); // keep input focus
-    node.addEventListener("click", () => choose(opt));
-    search.options.push(opt);
-    search.list.append(node);
-  };
-  const heading = (text) => search.list.append(el("li", { role: "presentation", class: "group", text }));
-
-  if (routes.length) {
-    heading("Routes");
-    for (const r of routes) add("route", r, shortLabel(r.id, r.short), routeDesc(r.long));
-  }
-  if (stops.length) {
-    heading("Stops");
-    for (const s of stops) add("stop", s, "●", s.name);
-  }
-  if (!search.options.length) {
-    search.list.append(el("li", { role: "presentation", class: "empty", text: stopList.length ? "No matching routes or stops" : "Data is still loading…" }));
-  }
-  search.list.hidden = false;
-  search.input.setAttribute("aria-expanded", "true");
-  setActive(-1);
-}
+/* ---------- search ---------- */
 
 function wireSearch() {
-  search.input = $("search");
-  search.list = $("results");
-  let timer;
-  search.input.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => renderResults(search.input.value), 120);
+  createCombobox({
+    input: $("search"), list: $("results"), emptyText: "No matching routes or stops",
+    search: (q) => [
+      {
+        heading: "Routes",
+        items: searchRoutes(searchRows, q, 8).map((r) => ({
+          badge: shortLabel(r.id, r.short), label: routeDesc(r.long), value: { view: "route", id: r.id },
+        })),
+      },
+      {
+        heading: "Stops",
+        items: searchStops(stopList, q, 6).map((s) => ({ badge: "●", badgeClass: "pin", label: s.name, value: { view: "stop", id: s.id } })),
+      },
+    ],
+    onChoose: (v) => { $("search").value = ""; navigate(v.view, v.id); },
   });
-  search.input.addEventListener("keydown", (e) => {
-    const n = search.options.length;
-    if (e.key === "ArrowDown" && n) { e.preventDefault(); setActive((search.active + 1) % n); }
-    else if (e.key === "ArrowUp" && n) { e.preventDefault(); setActive((search.active - 1 + n) % n); }
-    else if (e.key === "Enter" && n) { e.preventDefault(); choose(search.options[Math.max(search.active, 0)]); }
-    else if (e.key === "Escape") { if (n) closeResults(); else search.input.value = ""; }
-  });
-  search.input.addEventListener("blur", () => setTimeout(closeResults, 100));
 }
 
 /* ---------- map interactions ---------- */
 
 function wireMap() {
-  const pointer = () => (map.getCanvas().style.cursor = "pointer");
-  const reset = () => (map.getCanvas().style.cursor = "");
+  const pointer = () => { if (!plan.pick) map.getCanvas().style.cursor = "pointer"; };
+  const reset = () => { map.getCanvas().style.cursor = plan.pick ? "crosshair" : ""; };
   for (const id of ["network", "clusters", "stop-points", "route-stops"]) {
     map.on("mouseenter", id, pointer);
     map.on("mouseleave", id, reset);
   }
 
   map.on("click", "clusters", async (e) => {
+    if (plan.pick) return;
     const f = e.features[0];
     try {
       const zoom = await map.getSource("stops").getClusterExpansionZoom(f.properties.cluster_id);
       map.easeTo({ center: f.geometry.coordinates, zoom });
     } catch { /* the cluster changed while zooming */ }
   });
-  map.on("click", "stop-points", (e) => navigate("stop", e.features[0].properties.id));
-  map.on("click", "route-stops", (e) => navigate("stop", e.features[0].properties.id));
+  map.on("click", "stop-points", (e) => {
+    const id = e.features[0].properties.id;
+    if (plan.pick) { // picking a point: snap to the clicked stop
+      const s = stopList.find((x) => x.id === id);
+      const role = plan.pick;
+      plan.pick = null;
+      if (s) setPlaceFromStop(role, s);
+      return;
+    }
+    navigate("stop", id);
+  });
+  map.on("click", "route-stops", (e) => { if (!plan.pick) navigate("stop", e.features[0].properties.id); });
 
   map.on("click", "network", (e) => {
+    if (plan.pick) return;
     const hit = map.queryRenderedFeatures(e.point, { layers: ["clusters", "stop-points", "route-stops"] });
     if (hit.length) return;
     const seen = new Map();
@@ -234,6 +406,16 @@ function wireMap() {
     }
     const popup = new maplibregl.Popup({ maxWidth: "240px" }).setLngLat(e.lngLat)
       .setDOMContent(el("div", {}, el("div", { class: "popup-title", text: "Routes here" }), list)).addTo(map);
+  });
+
+  // Registered last so the layer handlers above run first and can claim a click on a stop.
+  map.on("click", (e) => {
+    if (!plan.pick) return;
+    const role = plan.pick;
+    plan.pick = null;
+    map.getCanvas().style.cursor = "";
+    const place = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+    goPlan(role === "from" ? place : plan.from, role === "to" ? place : plan.to);
   });
 }
 
@@ -251,6 +433,9 @@ function wireControls() {
     await setBasemap(map, state.scheme); // style.load re-installs the overlay
   });
   window.addEventListener("hashchange", applyHash);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && plan.pick) setPick(null);
+  });
 }
 
 async function main() {
@@ -262,7 +447,7 @@ async function main() {
   map.on("error", (e) => console.error("map error:", e.error?.message ?? e));
   wireMap();
   wireControls();
-  if (new URLSearchParams(location.search).has("debug")) window.__tgbus = { map, state }; // for browser tests
+  if (new URLSearchParams(location.search).has("debug")) window.__tgbus = { map, state, plan, planner };
   loadData();
   await firstStyle;
   applyHash();

@@ -18,6 +18,8 @@ jobs:
           go-version-file: go.mod
       - name: Vet
         run: go vet ./...
+      - name: Vet the WebAssembly build
+        run: GOOS=js GOARCH=wasm go vet ./cmd/planner-wasm
       - name: Test
         run: go test -race ./...
       - name: Build the site from the fixture feed
@@ -31,10 +33,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Syntax check
         run: for f in web/js/*.js; do node --check "$f"; done
-      - name: Unit tests
+      - name: Build the site and the planner (WebAssembly) from the fixture feed
+        run: make site FEED=testdata/feed OUT="$RUNNER_TEMP/site"
+      - name: Unit tests, including the planner running as WebAssembly
+        env:
+          TGBUS_DIST: ${{ runner.temp }}/site
         run: node --test web/test/*.test.mjs

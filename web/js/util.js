@@ -96,7 +96,53 @@ export function searchStops(stops, query, limit = 8) {
   return hits.slice(0, limit).map((h) => h.s);
 }
 
-/** Location hash -> { view: "home" | "route" | "stop", id }. Ids are validated. */
+/** "17.385,78.486" -> { lat, lon }, or null when malformed or out of range. */
+export function parseCoord(text) {
+  const m = /^(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)$/.exec(text || "");
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lon = Number(m[2]);
+  return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 ? { lat, lon } : null;
+}
+
+const round5 = (v) => String(Math.round(v * 1e5) / 1e5);
+
+/** "08:30" -> "0830"; and back via parseClock. */
+const compactClock = (min) => formatMinutes(min).replace(":", "");
+
+/** "45 min", "1 h 5 min", "2 h". Seconds are rounded to the nearest minute. */
+export function formatDuration(sec) {
+  const min = Math.max(0, Math.round(sec / 60));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+/** Walking distance: "350 m", "1.2 km". */
+export function formatMetres(m) {
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
+/** Wall-clock time of a seconds-since-midnight value, with a "+1" marker after midnight. */
+export function clockSec(sec) {
+  const day = Math.floor(sec / 86400);
+  const text = formatMinutes(Math.floor((((sec % 86400) + 86400) % 86400) / 60));
+  return day > 0 ? `${text} +${day}` : text;
+}
+
+/** Hash for a directions view. Missing places are "-"; the time is optional. */
+export function planHash(from, to, minutes) {
+  const place = (p) => (p ? `${round5(p.lat)},${round5(p.lon)}` : "-");
+  const time = Number.isInteger(minutes) && minutes >= 0 && minutes < 1440 ? `/${compactClock(minutes)}` : "";
+  return `#/plan/${place(from)}/${place(to)}${time}`;
+}
+
+/**
+ * Location hash -> { view: "home" | "route" | "stop", id } or
+ * { view: "plan", from, to, minutes } (places are { lat, lon } or null).
+ * Ids and coordinates are validated.
+ */
 export function parseHash(hash) {
   const h = (hash || "").replace(/^#/, "");
   let m = /^\/(route|stop)\/([^/]+)$/.exec(h);
@@ -104,6 +150,13 @@ export function parseHash(hash) {
     let id;
     try { id = decodeURIComponent(m[2]); } catch { return { view: "home" }; }
     return isSafeId(id) ? { view: m[1], id } : { view: "home" };
+  }
+  m = /^\/plan(?:\/([^/]*)\/([^/]*)(?:\/(\d{4}))?)?$/.exec(h);
+  if (m) {
+    const from = m[1] && m[1] !== "-" ? parseCoord(m[1]) : null;
+    const to = m[2] && m[2] !== "-" ? parseCoord(m[2]) : null;
+    const t = m[3] ? parseClock(`${m[3].slice(0, 2)}:${m[3].slice(2)}`) : null;
+    return { view: "plan", from, to, minutes: t };
   }
   m = /^route=(.+)$/.exec(h); // links from the first prototype
   if (m) {

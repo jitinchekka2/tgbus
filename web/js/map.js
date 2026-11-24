@@ -38,7 +38,7 @@ const dirColor = ["match", ["get", "direction"], 0, CONFIG.directionColors[0], 1
 /**
  * (Re)create our sources and layers. Called on every `style.load`, because
  * switching the basemap style discards custom layers. `state` holds the data
- * and visibility to restore: { overview, stops, route, selected, visible, dim, scheme }.
+ * and visibility to restore: { overview, stops, route, selected, plan, visible, dim, scheme }.
  */
 export function installOverlay(map, state) {
   const pal = CONFIG.palette[state.scheme];
@@ -49,6 +49,7 @@ export function installOverlay(map, state) {
   map.addSource("heat", { type: "geojson", data: state.stops });
   map.addSource("route", { type: "geojson", data: state.route });
   map.addSource("selected", { type: "geojson", data: state.selected });
+  map.addSource("plan", { type: "geojson", data: state.plan });
 
   map.addLayer({
     id: "network", type: "line", source: "overview",
@@ -117,6 +118,38 @@ export function installOverlay(map, state) {
     id: "route-stop-labels", type: "symbol", source: "route", minzoom: 12.5, filter: stopFilter,
     layout: { "text-field": ["to-string", ["get", "seq"]], "text-font": font, "text-size": 10 },
     paint: { "text-color": pal.label },
+  });
+  // A planned journey: bus lines, dashed walks, stops where the rider changes, and A/B.
+  const planKind = (k) => ["==", ["get", "kind"], k];
+  map.addLayer({
+    id: "plan-ride-casing", type: "line", source: "plan", filter: planKind("ride"),
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": pal.casing, "line-width": 9, "line-opacity": 0.9 },
+  });
+  map.addLayer({
+    id: "plan-ride", type: "line", source: "plan", filter: planKind("ride"),
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": ["get", "color"], "line-width": 5 },
+  });
+  map.addLayer({
+    id: "plan-walk", type: "line", source: "plan", filter: planKind("walk"),
+    paint: { "line-color": pal.label, "line-width": 3.5, "line-dasharray": [1.2, 1.4] },
+  });
+  map.addLayer({
+    id: "plan-stops", type: "circle", source: "plan", filter: planKind("stop"),
+    paint: { "circle-radius": 6, "circle-color": pal.casing, "circle-stroke-color": ["get", "color"], "circle-stroke-width": 3 },
+  });
+  map.addLayer({
+    id: "plan-ends", type: "circle", source: "plan", filter: ["in", ["get", "kind"], ["literal", ["origin", "dest"]]],
+    paint: {
+      "circle-radius": 11, "circle-stroke-color": "#ffffff", "circle-stroke-width": 3,
+      "circle-color": ["match", ["get", "kind"], "origin", "#2da44e", "#d1242f"],
+    },
+  });
+  map.addLayer({
+    id: "plan-end-labels", type: "symbol", source: "plan", filter: ["in", ["get", "kind"], ["literal", ["origin", "dest"]]],
+    layout: { "text-field": ["get", "label"], "text-font": font, "text-size": 12, "text-allow-overlap": true },
+    paint: { "text-color": "#ffffff" },
   });
   map.addLayer({
     id: "selected-stop", type: "circle", source: "selected",

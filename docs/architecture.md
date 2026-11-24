@@ -12,6 +12,50 @@ GTFS feed ──tgbus build──▶ dist/
                                └─ stops/<id>.json    one stop: routes and departure minutes
 ```
 
+## Journey planner
+
+```
+index.Index ──timetable.Build──▶ Timetable ──Encode──▶ data/timetable.bin
+                                      │                       │ (fetched by the page)
+                                      ▼                       ▼
+                               raptor.Network  ◀── planapi ◀── planner.wasm (Web Worker)
+```
+
+- **timetable** groups trips into *patterns* (same route, same stops, same order). Trips of a
+  pattern mostly share their run times, so a pattern stores a few *profiles* and each trip only
+  its first departure plus a profile number. The full Telangana feed encodes to 1.15 MB
+  (0.56 MB gzipped). `Decode` returns errors, never panics, on truncated or corrupt input
+  (tested for every truncation length and thousands of random corruptions).
+- **raptor** is round-based: round *k* finds the earliest arrival at every stop with at most
+  *k* bus rides, which directly yields the best journey for each number of rides. Decisions
+  specific to this feed:
+  - *Non-overtaking classes.* RAPTOR assumes a later trip never reaches a stop before an
+    earlier one on the same pattern. 393 real patterns break that, so each pattern is split
+    into classes where it holds (4,125 patterns become 4,698 classes).
+  - *Midnight.* The service runs every day, so a query is a time of day. Trips that run past
+    midnight are also available at their wall-clock time the next morning (a copy shifted by
+    -24 h), and tomorrow's trips (+24 h) serve late-night queries.
+  - *Two arrival times per stop.* A rider who arrives by bus may walk on to another stop; one
+    who arrived by walking may not. Keeping a bus arrival and a walk arrival separate matters:
+    a single "best arrival" wrongly discarded bus arrivals that were later than an earlier walk.
+  - *Transfers* have a 2-minute buffer after a bus. Origins and destinations are points: they
+    connect to nearby stops on foot, and a walk-only option is offered for short trips.
+- **planapi** validates requests (all fields required) and shapes responses as JSON so the
+  WebAssembly wrapper stays a few lines long.
+- **cmd/planner-wasm** exposes `load`, `plan` and `counts` to JavaScript. `web/js/planner.js`
+  starts it in a Web Worker only when Directions is first opened, so the explorer's first
+  load does not pay for it.
+
+### How the planner is verified
+The tests compare RAPTOR with **Connection Scan**, a different algorithm that shares none of
+its machinery (no rounds, patterns or classes): about 5,500 random queries over 400 random
+networks that include overtaking, loops, past-midnight trips and walking transfers must
+produce identical earliest arrivals, and every returned journey is checked for continuity,
+boarding times, transfer buffers and that each ride matches a real trip. The same comparison
+runs on the real feed when `TGBUS_FEED` points at it (300 random queries, all identical).
+Breaking each feature on purpose (no overtaking split, no midnight copies, no walking, no
+buffer, the single-arrival pruning) makes these tests fail.
+
 ## Packages
 - **`gtfs`** reads CSV by header name through `encoding/csv`, so quoted commas and
   non-standard column order are fine. `stop_times.txt` (~60 MB) is streamed, never held as rows.
