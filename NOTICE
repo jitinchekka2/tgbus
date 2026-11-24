@@ -5,8 +5,18 @@ This project reads the GTFS feed "Telangana opendata GTFS TGSRTC" published by
 Open Data Telangana (https://data.telangana.gov.in/) for the Telangana State
 Road Transport Corporation (TGSRTC).
 
-The feed is NOT included in this repository. Its licence terms have not yet
-been confirmed by the maintainer; the exact attribution statement required by
-the publisher will be added here before any derived data is distributed.
+Licence of the data: the maintainer uses the feed under a free, worldwide,
+non-exclusive licence for use, adaptation and redistribution of the data and
+derived works. This reflects the maintainer's understanding of the publisher's
+open-data terms; it has not been separately confirmed in writing with the
+publisher. If you rely on the data, check the terms on the publisher's dataset
+page yourself. Attribution to the publisher (Open Data Telangana / TGSRTC) is
+given in the site footer and here.
 
-Base map data: OpenStreetMap contributors (https://www.openstreetmap.org/copyright).
+The feed itself is NOT included in this repository.
+
+Third-party material
+--------------------
+- Base map data: (c) OpenStreetMap contributors (https://www.openstreetmap.org/copyright),
+  served as vector tiles by OpenFreeMap (https://openfreemap.org/) using OpenMapTiles.
+- MapLibre GL JS (BSD-3-Clause, https://maplibre.org/), vendored under web/vendor/.

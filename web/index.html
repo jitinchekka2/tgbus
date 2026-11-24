@@ -3,32 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TGSRTC Bus Network</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <meta name="description" content="Explore Telangana State Road Transport Corporation bus routes, stops and timetables on a map.">
+  <meta name="color-scheme" content="light dark">
+  <title>TGSRTC bus network</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map" role="application" aria-label="Map of the TGSRTC bus network"></div>
 
-  <aside id="panel">
-    <h1>TGSRTC bus network</h1>
-    <p class="sub">Telangana State Road Transport Corporation</p>
+  <aside id="panel" aria-label="Route and stop information">
+    <header>
+      <h1>TGSRTC bus network</h1>
+      <p class="muted">Telangana State Road Transport Corporation</p>
+    </header>
 
-    <input id="search" type="search" placeholder="Search route number or place…"
-           autocomplete="off" aria-label="Search routes">
-    <ul id="results" aria-label="Search results"></ul>
+    <div class="search-box">
+      <label for="search" class="sr-only">Search routes and stops</label>
+      <input id="search" type="search" placeholder="Search route number or stop…" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list">
+      <ul id="results" role="listbox" aria-label="Search results" hidden></ul>
+    </div>
 
-    <section id="route-card" hidden>
-      <div class="card-head">
-        <div>
-          <div id="route-short"></div>
-          <div id="route-long"></div>
-        </div>
-        <button id="route-clear" type="button" aria-label="Clear route">&times;</button>
-      </div>
-      <dl id="route-stats"></dl>
-      <div id="route-lines"></div>
-    </section>
+    <div id="view" aria-live="polite"></div>
 
     <fieldset id="layers">
       <legend>Layers</legend>
@@ -37,10 +34,20 @@
       <label><input type="checkbox" id="toggle-heat"> Service intensity (trips per stop)</label>
     </fieldset>
 
-    <p id="status" class="sub" role="status">Loading…</p>
+    <footer>
+      <p id="status" class="muted" role="status">Loading…</p>
+      <p class="muted small">
+        Schedules are from the published feed and may differ from what runs on the day.
+        Data: <a href="https://data.telangana.gov.in/" target="_blank" rel="noopener">Open Data Telangana</a> / TGSRTC.
+        Map: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors,
+        <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.
+      </p>
+      <p id="feed-info" class="muted small"></p>
+    </footer>
   </aside>
 
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="app.js"></script>
+  <noscript><p class="noscript">This map needs JavaScript.</p></noscript>
+  <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

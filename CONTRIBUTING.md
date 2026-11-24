@@ -6,14 +6,14 @@ Thanks for helping make TGSRTC bus data easier to use.
 1. Install Go (see `go.mod` for the version).
 2. Download the GTFS feed yourself (see the README) and keep it outside git; the
    repo ignores `Telangana_opendata_gtfs_*/`.
-3. `go test ./...` runs against the small fixture feed in `testdata/feed`, so no
+3. `go test ./...` and `node --test web/test` run against the small fixture feed in `testdata/feed`, so no
    download is needed for tests.
 
 ## Making a change
 - Keep changes focused; open an issue first for anything large.
 - Write Go tests as **table-driven tests** (a slice of cases run with `t.Run`).
 - Run `go vet ./... && go test -race ./... && golangci-lint run` before opening a PR.
-- Front-end code is plain ES modules with no build step; run `node --check` on JS you touch.
+- Front-end code is plain ES modules with no build step; run `node --check web/js/*.js` and `node --test web/test`.
 - Use clear commit messages in the imperative mood ("Add stop timetable").
 
 ## Data

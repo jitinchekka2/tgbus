@@ -1,5 +1,5 @@
-// Command tgbus explores a GTFS bus feed: it can print statistics and serve
-// an interactive map of the network.
+// Command tgbus turns a GTFS bus feed into a static, explorable website: it
+// can print statistics, build the site, and serve a built site for preview.
 package main
 
 import (
@@ -9,21 +9,23 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/jitinchekka2/tgbus/index"
-	"github.com/jitinchekka2/tgbus/internal/server"
+	"github.com/jitinchekka2/tgbus/site"
 	"github.com/jitinchekka2/tgbus/web"
 )
 
 const defaultFeed = "Telangana_opendata_gtfs_TGSRTC_25_September_2026"
 
-const usage = `tgbus: explore a GTFS bus feed
+const usage = `tgbus: turn a GTFS bus feed into a static, explorable website
 
 Usage:
-  tgbus serve [-feed dir] [-addr host:port]   serve the interactive map
-  tgbus stats [-feed dir]                     print feed statistics and skipped rows
+  tgbus build [-feed dir] [-out dir]   generate the static site (default out: dist)
+  tgbus serve [-dir dir] [-addr h:p]   serve a built site locally for preview
+  tgbus stats [-feed dir]              print feed statistics and skipped rows
 
 Run "tgbus <command> -h" for a command's flags.
 `
@@ -41,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("missing command")
 	}
 	switch args[0] {
+	case "build":
+		return cmdBuild(args[1:], stdout, stderr)
 	case "serve":
 		return cmdServe(args[1:], stderr)
 	case "stats":
@@ -89,31 +93,50 @@ func cmdStats(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func cmdServe(args []string, stderr io.Writer) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+func cmdBuild(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	feed := fs.String("feed", defaultFeed, "directory containing the GTFS .txt files")
-	addr := fs.String("addr", "localhost:8080", "address to listen on")
+	out := fs.String("out", "dist", "output directory for the static site")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
 	idx, took, err := loadFeed(*feed)
 	if err != nil {
 		return fmt.Errorf("load feed: %w", err)
 	}
-	st := idx.Stats
-	log.Printf("loaded %s in %s: %d routes, %d trips, %d stops, %d stop times, %d shapes",
-		*feed, took.Round(time.Millisecond), st.Routes, st.Trips, st.Stops, st.StopTimes, st.Shapes)
-	for r, n := range st.Skipped {
-		log.Printf("skipped %d %s", n, r)
-	}
+	_, _ = fmt.Fprintf(stdout, "loaded %s in %s\n", *feed, took.Round(time.Millisecond))
+	printStats(stdout, idx)
 
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           server.New(idx, web.FS),
-		ReadHeaderTimeout: 10 * time.Second,
+	rep, err := site.Build(idx, site.Options{Out: *out, Assets: web.FS, FeedName: filepath.Base(filepath.Clean(*feed))})
+	if err != nil {
+		return fmt.Errorf("build site: %w", err)
 	}
-	log.Printf("listening on http://%s", *addr)
+	_, _ = fmt.Fprintf(stdout, "wrote %d files (%.1f MB) to %s\n", rep.Files, float64(rep.Bytes)/1e6, *out)
+	return nil
+}
+
+// siteHandler serves a built site, or explains how to build one.
+func siteHandler(dir string) (http.Handler, error) {
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
+		return nil, fmt.Errorf("%s has no index.html; run `tgbus build -out %s` first", dir, dir)
+	}
+	return http.FileServer(http.Dir(dir)), nil
+}
+
+func cmdServe(args []string, stderr io.Writer) error {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir := fs.String("dir", "dist", "directory of a site built with `tgbus build`")
+	addr := fs.String("addr", "localhost:8080", "address to listen on")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	h, err := siteHandler(*dir)
+	if err != nil {
+		return err
+	}
+	srv := &http.Server{Addr: *addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	log.Printf("serving %s on http://%s", *dir, *addr)
 	return srv.ListenAndServe()
 }

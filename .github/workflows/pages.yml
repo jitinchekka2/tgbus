@@ -1,0 +1,50 @@
+name: Deploy site
+
+# Builds the static site from a GTFS feed and publishes it to GitHub Pages.
+#
+# The feed is not stored in this repository. To enable deployment:
+#   1. Confirm you may redistribute derived data (see NOTICE).
+#   2. Set the repository variable FEED_URL to a direct link to the GTFS .zip.
+#   3. Settings -> Pages -> Source: "GitHub Actions".
+# Without FEED_URL the job is skipped.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # weekly, picks up a refreshed feed
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ vars.FEED_URL != '' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download the feed
+        env:
+          FEED_URL: ${{ vars.FEED_URL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/feed"
+          curl -fsSL "$FEED_URL" -o "$RUNNER_TEMP/feed.zip"
+          unzip -q -j "$RUNNER_TEMP/feed.zip" '*.txt' -d "$RUNNER_TEMP/feed"
+      - name: Build the site
+        run: go run ./cmd/tgbus build -feed "$RUNNER_TEMP/feed" -out dist
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

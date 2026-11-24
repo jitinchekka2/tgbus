@@ -237,11 +237,29 @@ func TestStopStats(t *testing.T) {
 		id     string
 		trips  int
 		routes map[string]int
+		deps   map[string][]int // departures per route (arrivals at the last stop excluded)
 	}{
-		{name: "shared by two routes", id: "A", trips: 4, routes: map[string]int{"R1": 3, "R2": 1}},
-		{name: "single route", id: "B", trips: 2, routes: map[string]int{"R1": 2}},
-		{name: "end of line", id: "C", trips: 3, routes: map[string]int{"R1": 3}},
-		{name: "served by R2 only", id: "D", trips: 1, routes: map[string]int{"R2": 1}},
+		{
+			name: "shared by two routes", id: "A", trips: 4,
+			routes: map[string]int{"R1": 3, "R2": 1},
+			// R1: T1 08:00 and T2 25:10 depart; T3 ends here at 09:30 so is not a departure.
+			deps: map[string][]int{"R1": {8 * 3600, 25*3600 + 10*60}, "R2": {10 * 3600}},
+		},
+		{
+			name: "single route", id: "B", trips: 2, routes: map[string]int{"R1": 2},
+			deps: map[string][]int{"R1": {8*3600 + 10*60, 9*3600 + 20*60}},
+		},
+		{
+			name: "end of line", id: "C", trips: 3, routes: map[string]int{"R1": 3},
+			// T1 and T2 end at C; only T3 departs from it.
+			deps: map[string][]int{"R1": {9 * 3600}},
+		},
+		{
+			// T4's final stop ZZ is not in stops.txt and is dropped, so D is the last
+			// known stop of that trip and counts as its end: no departures.
+			name: "served by R2 only", id: "D", trips: 1, routes: map[string]int{"R2": 1},
+			deps: map[string][]int{"R2": {}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -258,6 +276,13 @@ func TestStopStats(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.routes) {
 				t.Errorf("routes = %v, want %v", got, tt.routes)
+			}
+			gotDeps := map[string][]int{}
+			for _, sr := range s.Routes {
+				gotDeps[sr.Route.ID] = sr.Departures
+			}
+			if !reflect.DeepEqual(gotDeps, tt.deps) {
+				t.Errorf("departures = %v, want %v", gotDeps, tt.deps)
 			}
 			if !sort.SliceIsSorted(s.Routes, func(i, j int) bool { return s.Routes[i].Trips > s.Routes[j].Trips }) {
 				t.Errorf("routes not sorted busiest first: %v", s.Routes)

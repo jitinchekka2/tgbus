@@ -20,6 +20,8 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Build the site from the fixture feed
+        run: go run ./cmd/tgbus build -feed testdata/feed -out "$RUNNER_TEMP/site" && test -f "$RUNNER_TEMP/site/index.html"
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -33,4 +35,6 @@ jobs:
         with:
           node-version: 22
       - name: Syntax check
-        run: for f in web/*.js; do node --check "$f"; done
+        run: for f in web/js/*.js; do node --check "$f"; done
+      - name: Unit tests
+        run: node --test web/test

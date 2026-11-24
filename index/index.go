@@ -71,6 +71,11 @@ type Stop struct {
 type StopRoute struct {
 	Route *Route
 	Trips int
+	// Departures are the seconds-since-midnight at which trips of this route
+	// leave the stop, ascending. Values can exceed 86400 for trips past
+	// midnight. Trips that end at the stop or have no usable time are omitted,
+	// so len(Departures) can be smaller than Trips.
+	Departures []int
 }
 
 type rawStopTime struct{ seq, stop, dep int32 }
@@ -181,16 +186,19 @@ func Load(dir string) (*Index, error) {
 	}
 
 	// Per-route lines and per-stop statistics.
-	stopRoutes := make([]map[*Route]int, len(idx.Stops))
+	stopRoutes := make([]map[*Route][]int, len(idx.Stops))
 	geom := make(map[string]shapeGeom)
 	for _, rt := range idx.Routes {
 		idx.buildRoute(rt, tripsOfRoute[rt], trips, perTrip, shapes, geom, stopRoutes)
 	}
 	for i, m := range stopRoutes {
 		st := idx.Stops[i]
-		for rt, c := range m {
-			st.Routes = append(st.Routes, StopRoute{Route: rt, Trips: c})
-			st.Trips += c
+		for rt, deps := range m {
+			sort.Ints(deps)
+			// Unknown times are stored as -1 so they still count as trips.
+			unknown := sort.SearchInts(deps, 0)
+			st.Routes = append(st.Routes, StopRoute{Route: rt, Trips: len(deps), Departures: deps[unknown:]})
+			st.Trips += len(deps)
 		}
 		sort.Slice(st.Routes, func(a, b int) bool {
 			ra, rb := st.Routes[a], st.Routes[b]
@@ -227,7 +235,7 @@ type group struct {
 }
 
 func (idx *Index) buildRoute(rt *Route, tripIDs []int32, trips []gtfs.Trip, perTrip [][]rawStopTime,
-	shapes map[string][]gtfs.Point, geom map[string]shapeGeom, stopRoutes []map[*Route]int) {
+	shapes map[string][]gtfs.Point, geom map[string]shapeGeom, stopRoutes []map[*Route][]int) {
 
 	rt.Trips = len(tripIDs)
 	var order []string
@@ -245,13 +253,17 @@ func (idx *Index) buildRoute(rt *Route, tripIDs []int32, trips []gtfs.Trip, perT
 				rt.LastDep = d
 			}
 		}
-		for _, st := range list {
+		for i, st := range list {
 			m := stopRoutes[st.stop]
 			if m == nil {
-				m = make(map[*Route]int)
+				m = make(map[*Route][]int)
 				stopRoutes[st.stop] = m
 			}
-			m[rt]++
+			dep := int(st.dep)
+			if i == len(list)-1 {
+				dep = -1 // the last stop of a trip is an arrival, not a departure
+			}
+			m[rt] = append(m[rt], dep)
 		}
 
 		t := trips[ti]
