@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/jitinchekka2/tgbus/gtfs"
 )
 
 const fixture = "../testdata/feed"
@@ -320,6 +322,92 @@ func TestSearch(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Search(%q, %d) = %v, want %v", tt.q, tt.limit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTripCalls(t *testing.T) {
+	idx := loadFixture(t)
+	type call struct {
+		stop string
+		dep  int32
+	}
+	tests := []struct {
+		name  string
+		route string
+		calls []call
+	}{
+		{name: "rows given out of order are sorted", route: "R1", calls: []call{{"A", 8 * 3600}, {"B", 8*3600 + 600}, {"C", 8*3600 + 1800}}},
+		{name: "past-midnight trip keeps times above 24h", route: "R1", calls: []call{{"A", 25*3600 + 600}, {"C", 25*3600 + 2400}}},
+		{name: "opposite direction", route: "R1", calls: []call{{"C", 9 * 3600}, {"B", 9*3600 + 1200}, {"A", 9*3600 + 1800}}},
+		{name: "stop missing from stops.txt is dropped", route: "R2", calls: []call{{"A", 10 * 3600}, {"D", 10*3600 + 600}}},
+	}
+	// Trips with an unknown route (T5) are excluded, so exactly the four above remain, in feed order.
+	if len(idx.Trips) != len(tests) {
+		t.Fatalf("trips = %d, want %d", len(idx.Trips), len(tests))
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tc := idx.Trips[i]
+			if tc.Route.ID != tt.route {
+				t.Errorf("route = %s, want %s", tc.Route.ID, tt.route)
+			}
+			var got []call
+			for j := range tc.Stop {
+				got = append(got, call{idx.Stops[tc.Stop[j]].ID, tc.Dep[j]})
+			}
+			if !reflect.DeepEqual(got, tt.calls) {
+				t.Errorf("calls = %v, want %v", got, tt.calls)
+			}
+		})
+	}
+}
+
+func TestBuildTripCallsRepairs(t *testing.T) {
+	rt := &Route{ID: "R"}
+	idx := &Index{routeByID: map[string]*Route{"R": rt}}
+	tests := []struct {
+		name     string
+		in       []rawStopTime
+		wantDeps []int32 // nil means the trip is dropped
+		notes    map[string]int
+	}{
+		{name: "clean trip", in: []rawStopTime{{1, 0, 100}, {2, 1, 200}}, wantDeps: []int32{100, 200}},
+		{
+			name: "missing time filled from previous", in: []rawStopTime{{1, 0, 100}, {2, 1, -1}, {3, 2, 300}},
+			wantDeps: []int32{100, 100, 300},
+			notes:    map[string]int{"stop times with a missing time (filled from the previous stop)": 1},
+		},
+		{
+			name: "backwards time raised", in: []rawStopTime{{1, 0, 100}, {2, 1, 90}},
+			wantDeps: []int32{100, 100},
+			notes:    map[string]int{"stop times running backwards (raised to the previous stop)": 1},
+		},
+		{
+			name: "no time at the first stop drops the trip", in: []rawStopTime{{1, 0, -1}, {2, 1, 90}},
+			notes: map[string]int{"trips dropped: no departure time at the first stop": 1},
+		},
+		{name: "single call dropped", in: []rawStopTime{{1, 0, 100}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			notes := map[string]int{}
+			note := func(r string, n int) { notes[r] += n }
+			got := buildTripCalls(idx, []gtfs.Trip{{RouteID: "R"}}, [][]rawStopTime{tt.in}, note)
+			if tt.wantDeps == nil {
+				if len(got) != 0 {
+					t.Fatalf("trip kept, want dropped: %+v", got)
+				}
+			} else if len(got) != 1 || !reflect.DeepEqual(got[0].Dep, tt.wantDeps) {
+				t.Fatalf("got %+v, want deps %v", got, tt.wantDeps)
+			}
+			want := tt.notes
+			if want == nil {
+				want = map[string]int{}
+			}
+			if !reflect.DeepEqual(notes, want) {
+				t.Errorf("notes = %v, want %v", notes, want)
 			}
 		})
 	}

@@ -19,6 +19,7 @@ const (
 type Index struct {
 	Routes []*Route // sorted by short name
 	Stops  []*Stop
+	Trips  []TripCalls // every usable trip with at least two calls
 	Stats  Stats
 
 	routeByID map[string]*Route
@@ -29,6 +30,16 @@ type Index struct {
 type Stats struct {
 	Routes, Trips, Stops, StopTimes, Shapes int
 	Skipped                                 map[string]int // rows dropped, by reason
+}
+
+// TripCalls is one trip: its route and the stops it calls at, in order, with
+// the departure time (seconds since the start of the service day) at each.
+// Times never decrease along a trip; Load repairs or drops trips where the
+// feed breaks that. Stop is an index into Index.Stops.
+type TripCalls struct {
+	Route *Route
+	Stop  []int32
+	Dep   []int32
 }
 
 // Route is a bus route with its drawable lines.
@@ -184,6 +195,8 @@ func Load(dir string) (*Index, error) {
 			sort.Slice(list, func(i, j int) bool { return list[i].seq < list[j].seq })
 		}
 	}
+
+	idx.Trips = buildTripCalls(idx, trips, perTrip, note)
 
 	// Per-route lines and per-stop statistics.
 	stopRoutes := make([]map[*Route][]int, len(idx.Stops))
@@ -407,3 +420,40 @@ func naturalLess(a, b string) bool {
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// buildTripCalls turns the raw per-trip stop lists into TripCalls. A missing
+// time is filled from the previous call; a time that runs backwards is raised
+// to the previous one. Trips that start without a time or have fewer than two
+// calls are dropped. Each repair or drop is counted through note.
+func buildTripCalls(idx *Index, trips []gtfs.Trip, perTrip [][]rawStopTime, note func(string, int)) []TripCalls {
+	out := make([]TripCalls, 0, len(perTrip))
+	for i, list := range perTrip {
+		if len(list) < 2 {
+			continue
+		}
+		rt := idx.routeByID[trips[i].RouteID]
+		if rt == nil || list[0].dep < 0 {
+			if rt != nil {
+				note("trips dropped: no departure time at the first stop", 1)
+			}
+			continue
+		}
+		tc := TripCalls{Route: rt, Stop: make([]int32, len(list)), Dep: make([]int32, len(list))}
+		prev := list[0].dep
+		for j, st := range list {
+			dep := st.dep
+			switch {
+			case dep < 0:
+				dep = prev
+				note("stop times with a missing time (filled from the previous stop)", 1)
+			case dep < prev:
+				dep = prev
+				note("stop times running backwards (raised to the previous stop)", 1)
+			}
+			tc.Stop[j], tc.Dep[j] = st.stop, dep
+			prev = dep
+		}
+		out = append(out, tc)
+	}
+	return out
+}

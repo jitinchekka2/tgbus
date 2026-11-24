@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jitinchekka2/tgbus/index"
+	"github.com/jitinchekka2/tgbus/timetable"
 )
 
 func TestCheckIDs(t *testing.T) {
@@ -94,6 +95,7 @@ func TestBuildFiles(t *testing.T) {
 		{name: "overview", path: "data/overview.json", exists: true},
 		{name: "stops", path: "data/stops.json", exists: true},
 		{name: "search", path: "data/search.json", exists: true},
+		{name: "planner timetable", path: "data/timetable.bin", exists: true},
 		{name: "route file", path: "data/routes/R1.json", exists: true},
 		{name: "route without trips still has a page", path: "data/routes/R3.json", exists: true},
 		{name: "stop file", path: "data/stops/A.json", exists: true},
@@ -107,9 +109,9 @@ func TestBuildFiles(t *testing.T) {
 			}
 		})
 	}
-	// 3 assets + meta/overview/stops/search + 3 routes + 4 stops.
-	if rep.Files != 3+4+3+4 {
-		t.Errorf("report files = %d, want %d", rep.Files, 3+4+3+4)
+	// 3 assets + meta/overview/stops/search/timetable + 3 routes + 4 stops.
+	if rep.Files != 3+5+3+4 {
+		t.Errorf("report files = %d, want %d", rep.Files, 3+5+3+4)
 	}
 }
 
@@ -281,5 +283,22 @@ func TestBuildErrors(t *testing.T) {
 				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestBuildTimetableDecodes(t *testing.T) {
+	out, _ := buildFixture(t)
+	b, err := os.ReadFile(filepath.Join(out, "data/timetable.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt, err := timetable.Decode(b)
+	if err != nil {
+		t.Fatalf("timetable.bin does not decode: %v", err)
+	}
+	patterns, trips, _ := tt.Counts()
+	// R1 has three patterns (A-B-C, A-C, C-B-A) and R2 one; every trip is kept.
+	if patterns != 4 || trips != 4 || len(tt.Stops) != 4 {
+		t.Errorf("patterns/trips/stops = %d/%d/%d, want 4/4/4", patterns, trips, len(tt.Stops))
 	}
 }

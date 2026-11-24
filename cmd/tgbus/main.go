@@ -26,6 +26,8 @@ Usage:
   tgbus build [-feed dir] [-out dir] [-name label]
                                        generate the static site (default out: dist)
   tgbus serve [-dir dir] [-addr h:p]   serve a built site locally for preview
+  tgbus plan  [-feed dir] -from lat,lon -to lat,lon [-at HH:MM]
+                                       plan a bus journey (try -from-stop / -to-stop with names)
   tgbus stats [-feed dir]              print feed statistics and skipped rows
 
 Run "tgbus <command> -h" for a command's flags.
@@ -48,6 +50,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdBuild(args[1:], stdout, stderr)
 	case "serve":
 		return cmdServe(args[1:], stderr)
+	case "plan":
+		return cmdPlan(args[1:], stdout, stderr)
 	case "stats":
 		return cmdStats(args[1:], stdout, stderr)
 	case "-h", "--help", "help":

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jitinchekka2/tgbus/index"
+	"github.com/jitinchekka2/tgbus/timetable"
 )
 
 // Options configure Build.
@@ -132,6 +133,14 @@ func Build(idx *index.Index, opts Options) (Report, error) {
 		func() error { return w.writeJSON("data/overview.json", buildOverview(idx)) },
 		func() error { return w.writeJSON("data/stops.json", buildStops(idx)) },
 		func() error { return w.writeJSON("data/search.json", buildSearch(idx)) },
+		func() error {
+			// The journey planner's input, in a compact binary form.
+			b, err := timetable.Encode(timetable.Build(idx))
+			if err != nil {
+				return fmt.Errorf("encode timetable: %w", err)
+			}
+			return w.writeFile("data/timetable.bin", b)
+		},
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
