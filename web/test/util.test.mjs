@@ -1,4 +1,4 @@
-// Run with: node --test web/test
+// Run with: node --test web/test/*.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
 import {

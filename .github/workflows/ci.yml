@@ -37,4 +37,4 @@ jobs:
       - name: Syntax check
         run: for f in web/js/*.js; do node --check "$f"; done
       - name: Unit tests
-        run: node --test web/test
+        run: node --test web/test/*.test.mjs

@@ -46,7 +46,7 @@ Other commands:
 ```sh
 go run ./cmd/tgbus stats -feed path/to/feed   # counts and any rows that were skipped
 go test -race ./...                           # Go tests (use the small fixture feed)
-node --test web/test                          # front-end unit tests (Node 20+, no install)
+node --test web/test/*.test.mjs                          # front-end unit tests (Node 20+, no install)
 ```
 
 ## How it works
